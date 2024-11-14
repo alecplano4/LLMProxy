@@ -56,4 +56,17 @@ void initialize_proxy(int listening_port) {
 }
 
 
+    //Assumption
+    //ALEC: Assume getting an encrypted messgae
+    //funciton will need string header, key from client to decrypte
+
+void forward_header(){
+    //Decrypte header from client
+    //encrytp https request
+    //send it to internet
+    //recieve message back
+    //unencrypt message
+    
+}
+
 //-------------------------------------------------------------------------------------------------
