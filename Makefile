@@ -1,6 +1,8 @@
 CC = gcc
 CFLAGS = -Wall -Ishared
 
+#LDFLAGS = -lssl -lcrypto
+
 # Directories
 SHARED_DIR = shared
 PROXY_DIR = proxy
@@ -32,6 +34,9 @@ $(CLIENT_OUT): $(CLIENT_SRC) $(SHARED_SRC)
 # Build the client executable
 $(TEST_OUT): $(TEST_SRC) $(SHARED_SRC) proxy/proxy.c client/client.c
 	$(CC) $(CFLAGS) -o $@ $^
+
+test_client.out: 
+	gcc -o test_client.out openssl-bio-fetch.c
 
 # Clean up the build files
 clean:
