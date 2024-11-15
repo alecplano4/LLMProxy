@@ -61,12 +61,13 @@ void initialize_proxy(int listening_port) {
     //funciton will need string header, key from client to decrypte
 
 void forward_header(){
+    printf("heheh\n");
     //Decrypte header from client
     //encrytp https request
     //send it to internet
     //recieve message back
     //unencrypt message
-    
+
 }
 
 //-------------------------------------------------------------------------------------------------
