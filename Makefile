@@ -36,9 +36,9 @@ $(TEST_OUT): $(TEST_SRC) $(SHARED_SRC) proxy/proxy.c client/client.c
 	$(CC) $(CFLAGS) -o $@ $^
 
 test_client.out: 
-	gcc -o test_client.out openssl-bio-fetch.c
+	gcc -o test_client.out openssl-bio-fetch.c -lssl -lcrypto
 
 # Clean up the build files
 clean:
-	rm -f $(SERVER_OUT) $(CLIENT_OUT) $(TEST_OUT)
+	rm -f $(SERVER_OUT) $(CLIENT_OUT) $(TEST_OUT) test_client.out
 
