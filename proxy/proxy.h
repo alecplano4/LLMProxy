@@ -6,15 +6,13 @@
 #ifndef PROXY_H
 #define PROXY_H
 
-#include <openssl/ssl.h>
-#include <openssl/bio.h>
-#include <openssl/err.h>
-#include <openssl/pem.h>
-#include <openssl/conf.h>
-#include <openssl/x509.h>
-#include <openssl/buffer.h>
-#include <openssl/x509v3.h>
-#include <openssl/opensslconf.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <unistd.h>
+#include <assert.h>
+
+
 
 // ----GLOBAL VARIABLES----------------------------------------------------------------------------
 
@@ -23,7 +21,7 @@
 //----FUNCTIONS------------------------------------------------------------------------------------
 void initialize_proxy(int listening_port);
 
-void forward_header();
+void proxy_server();
 
 #endif
 //-------------------------------------------------------------------------------------------------
