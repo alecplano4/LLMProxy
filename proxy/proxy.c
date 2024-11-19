@@ -18,6 +18,8 @@
 #include <openssl/rsa.h>
 #include <openssl/err.h>
 #include <openssl/pem.h>
+#include <openssl/bn.h>
+
 
 
 
@@ -109,10 +111,163 @@ void configure_context(SSL_CTX *ctx, const char* certificate, const char* key) {
 }
 
 
+// int create_server_certificate() {
 
+
+//     /*------------------------------------*/
+//         //FILE *root_cert_file = fopen("/Users/alecplano/Library/Application Support/Certificate Authority/Alec Plano’s CA/Alec Plano’s CA certificates.pem", "r");
+
+//         FILE *root_cert_file = fopen("ca.crt", "r");
+//         FILE *root_key_file = fopen("ca.key", "r");
+
+//         if (!root_key_file) {
+//             fprintf(stderr, "private key file.\n");
+//             exit(EXIT_FAILURE);
+//         }
+
+//         if (!root_cert_file) {
+//             fprintf(stderr, "Error opening root certificate\n");
+//             exit(EXIT_FAILURE);
+//         }
+
+//         X509 *root_cert = PEM_read_X509(root_cert_file, NULL, NULL, NULL);
+//         EVP_PKEY *root_key = PEM_read_PrivateKey(root_key_file, NULL, NULL, NULL);
+
+//         fclose(root_cert_file);
+//         fclose(root_key_file);
+
+//         if (!root_key) {
+//             fprintf(stderr, "Error reading private key.\n");
+//             exit(EXIT_FAILURE);
+//         }
+
+//         if (!root_cert) {
+//             fprintf(stderr, "Error reading root certificate\n");
+//             exit(EXIT_FAILURE);
+//         }
+
+
+
+
+//     /*------------------------------------*/
+
+//     // Generate RSA private key
+//     EVP_PKEY *pkey = EVP_PKEY_new();
+//     RSA *rsa = RSA_new();
+//     BIGNUM *bn = BN_new();
+//     int key_len = 2048;
+//     BN_set_word(bn, 65537);
+//     if (!bn || !RSA_generate_key_ex(rsa, key_len, bn, NULL)) {
+//         printf("Error with RSA_generate_key_ex");
+//         exit(EXIT_FAILURE);
+//     }
+//     EVP_PKEY_assign_RSA(pkey, rsa);
+
+//     // Step 3: Create a new X.509 certificate
+//     X509 *x509 = X509_new();
+//     if (!x509) {
+//         printf("Error with x509");
+//         exit(EXIT_FAILURE);    }
+
+//     // Set the version of the certificate (version 3)
+//     if (X509_set_version(x509, 2) != 1) {
+//         printf("Error with X509_set_version");
+//         exit(EXIT_FAILURE);
+//     }
+
+//     // Step 4: Set the certificate's serial number
+//     ASN1_INTEGER_set(X509_get_serialNumber(x509), 1);
+
+//     // Step 5: Set the validity period of the certificate
+//     ASN1_TIME_set(X509_get_notBefore(x509), time(NULL)); // current time
+//     ASN1_TIME_set(X509_get_notAfter(x509), time(NULL) + 10 * 24 * 60 * 60); // 10 years
+
+//     // Step 6: Set the subject name of the certificate (e.g., "localhost")
+//     X509_NAME *name = X509_get_subject_name(x509);
+//     X509_NAME_add_entry_by_txt(name, "C", 0, (unsigned char *)"US", -1, -1, 0);
+//     X509_NAME_add_entry_by_txt(name, "ST", 0, (unsigned char *)"MA", -1, -1, 0);
+//     X509_NAME_add_entry_by_txt(name, "L", 0, (unsigned char *)"BOS", -1, -1, 0);
+//     X509_NAME_add_entry_by_txt(name, "O", 0, (unsigned char *)"Sam&Alec CO.", -1, -1, 0);
+//     X509_NAME_add_entry_by_txt(name, "OU", 0, (unsigned char *)"My Org", -1, -1, 0);
+//     X509_NAME_add_entry_by_txt(name, "CN", 0, (unsigned char *)"localhost", -1, -1, 0);
+
+//     // Set the issuer name (for self-signed, the issuer is the same as the subject)
+//     X509_set_issuer_name(x509, name);
+
+//     // Step 7: Set the public key for the certificate
+//     if (X509_set_pubkey(x509, pkey) != 1) {
+//         printf("Error with X509_set_pubkey");
+//         exit(EXIT_FAILURE);
+//     }
+
+//     // Step 8: Sign the certificate with the private key
+//     if (X509_sign(x509, pkey, EVP_sha256()) <= 0) {
+//         printf("Error with X509_sign");
+//         exit(EXIT_FAILURE);
+//     }
+
+//     // Step 9: Write the private key to the PEM file
+//     FILE *key_file = fopen("server_key.pem", "wb");
+//     if (!key_file) {
+//         perror("Unable to open file for writing private key");
+//         return 1;
+//     }
+//     if (PEM_write_PrivateKey(key_file, pkey, NULL, NULL, 0, NULL, NULL) != 1) {
+//         perror("Error writing private key to file");
+//         fclose(key_file);
+//         return 1;
+//     }
+//     fclose(key_file);
+
+//     // Step 10: Write the certificate to the PEM file
+//     FILE *cert_file = fopen("server_cert.pem", "wb");
+//     if (!cert_file) {
+//         perror("Unable to open file for writing certificate");
+//         return 1;
+//     }
+//     if (PEM_write_X509(cert_file, x509) != 1) {
+//         perror("Error writing certificate to file");
+//         fclose(cert_file);
+//         return 1;
+//     }
+//     fclose(cert_file);
+
+//     // Clean up
+//     EVP_PKEY_free(pkey);
+//     X509_free(x509);
+//     BN_free(bn);
+
+//     printf("Server private key and certificate successfully created.\n");
+//     return 0;
+// }
 
 
 void create_server_certificate(void) {
+
+/*------------------------------------*/
+    FILE *root_cert_file = fopen("ca.crt", "r");
+    FILE *root_key_file = fopen("ca.key", "r");
+
+    if (!root_cert_file || !root_key_file) {
+        fprintf(stderr, "Error opening root certificate or private key file.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    X509 *root_cert = PEM_read_X509(root_cert_file, NULL, NULL, NULL);
+    EVP_PKEY *root_key = PEM_read_PrivateKey(root_key_file, NULL, NULL, NULL);
+
+    fclose(root_cert_file);
+    fclose(root_key_file);
+
+    if (!root_cert || !root_key) {
+        fprintf(stderr, "Error reading root certificate or private key.\n");
+        exit(EXIT_FAILURE);
+    }
+
+
+/*------------------------------------*/
+
+
     // Create data structure for storing private key
     EVP_PKEY * pkey;
     pkey = EVP_PKEY_new();
@@ -162,10 +317,14 @@ void create_server_certificate(void) {
                             (unsigned char *)"localhost", -1, -1, 0);
 
     // Set the issuer name
-    X509_set_issuer_name(x509, name);
+    //X509_set_issuer_name(x509, name);
 
     // Sign the certificate
-    X509_sign(x509, pkey, EVP_sha1());
+    if (!X509_set_issuer_name(x509, X509_get_subject_name(root_cert))) {
+        fprintf(stderr, "Error setting issuer name.\n");
+        exit(EXIT_FAILURE);
+    }
+    X509_sign(x509, pkey, EVP_sha256());
 
     // Write private key to disk as .pem file
     FILE * f;
@@ -174,7 +333,7 @@ void create_server_certificate(void) {
         f,                  /* write the key to the file we've opened */
         pkey,               /* use key from earlier */
         EVP_des_ede3_cbc(), /* default cipher for encrypting the key on disk */
-        "replace_me",       /* passphrase required for decrypting the key on disk */
+        NULL,       /* passphrase required for decrypting the key on disk */
         10,                 /* length of the passphrase string */
         NULL,               /* callback for requesting a password */
         NULL                /* data to pass to the callback */
@@ -219,7 +378,7 @@ void initialize_proxy(int listening_port) {
         SSL *ssl;
 
         /* TODO variable reply */
-        const char reply[] = "test\n";
+        const char reply[] = "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>Simple Web Page</title></head><body><h1>Hello, World!</h1></body></html>";
 
         // Establish basic TCP connection with client (perform TCP handshake)
         printf("Prior to client connection\n");
@@ -256,7 +415,9 @@ void initialize_proxy(int listening_port) {
         printf("Calling SSL_set_fd\n");
         SSL_set_fd(ssl, client_socket);    // Link SSL object to accepted TCP socket
         printf("Done with SSL Stuff\n");
-        if (SSL_accept(ssl) <= 0) {        // Perform SSL handshake
+        int ret  = SSL_accept(ssl);
+        if (ret <= 0) {        // Perform SSL handshake
+            int i = SSL_get_error(ssl,ret);
             printf("Unsuccessful client SSL handshake\n");
             ERR_print_errors_fp(stderr);
         } else {
