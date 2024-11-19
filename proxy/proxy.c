@@ -45,6 +45,15 @@ int create_socket(int port, struct sockaddr_in* server_addr)
         exit(EXIT_FAILURE);
     }
 
+    /* ALLOWS US TO REUSE SOCKETS*/
+    int optval = 1;
+    // Set the SO_REUSEADDR option to allow the socket to be reused
+    if (setsockopt(listening_socket_fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) == -1) {
+        perror("setsockopt");
+        close(listening_socket_fd);
+        exit(EXIT_FAILURE);
+    }
+
     if (bind(listening_socket_fd, (struct sockaddr*) server_addr, sizeof(struct sockaddr_in)) < 0) {
         perror("Error binding listening socket");
         exit(EXIT_FAILURE);
@@ -84,12 +93,16 @@ SSL_CTX *create_context() {
 // Load certificate and private key into SSL Context object
 void configure_context(SSL_CTX *ctx, const char* certificate, const char* key) {
     /* Set the key and cert */
+    printf("HERE");
     if (SSL_CTX_use_certificate_file(ctx, certificate, SSL_FILETYPE_PEM) <= 0) {
+        printf("HERE2");
         ERR_print_errors_fp(stderr);
         exit(EXIT_FAILURE);
     }
-
+    
+    printf("HERE3");
     if (SSL_CTX_use_PrivateKey_file(ctx, key, SSL_FILETYPE_PEM) <= 0 ) {
+        printf("HERE4");
         ERR_print_errors_fp(stderr);
         exit(EXIT_FAILURE);
     }
@@ -166,6 +179,8 @@ void create_server_certificate(void) {
         NULL,               /* callback for requesting a password */
         NULL                /* data to pass to the callback */
     );
+    fclose(f);
+
 
     // Write certificate to disk as .pem file
     // FILE * f;
@@ -174,6 +189,7 @@ void create_server_certificate(void) {
         f,   /* write the certificate to the file we've opened */
         x509 /* our certificate */
     );
+    fclose(f);
 }
 
 
@@ -188,13 +204,21 @@ void initialize_proxy(int listening_port) {
     // Ignore broken pipe signals 
     signal(SIGPIPE, SIG_IGN);
 
-    // Create socket and begin listening using TCP
+    // Create socket used for listening
     listening_socket_fd = create_socket(listening_port, &server_addr);
 
+    char str_addr[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(server_addr.sin_addr), str_addr, INET_ADDRSTRLEN);
+
+    printf("Server Listening at address %.*s on port %d\n", INET_ADDRSTRLEN, str_addr, server_addr.sin_port);
+
     while(1) {
+        /* Declare client address variables */
         struct sockaddr_in client_addr;
         unsigned int len = sizeof(client_addr);
         SSL *ssl;
+
+        /* TODO variable reply */
         const char reply[] = "test\n";
 
         // Establish basic TCP connection with client (perform TCP handshake)
@@ -205,25 +229,41 @@ void initialize_proxy(int listening_port) {
             exit(EXIT_FAILURE);
         }
 
+        /* NEED TO READ HTTP GET FIRST BEFORE WE CAN DO ANYTHIGN*/
+        // char buf[10000] = {0};
+        // read(client_socket, buf, 10000);
+        // printf("%.*s\n\n\n",100, buf);
+
+
+
         // Create server certificate and save to disk
+        printf("Creating Certificate... \n");
         create_server_certificate();
         printf("Certificate created\n");
 
         // Prepare SSL Context object
         ctx = create_context();                                      // Get SSL Context to store TLS configuration parameters
         printf("Context created\n");
+        /* TODO: I think there is somthing wrong with the vertificate files */
         configure_context(ctx, "server_cert.pem", "server_key.pem"); // Load certificate and private key into context
+        //configure_context(ctx, "ca.crt", "ca.key"); // Load certificate and private key into context
+
         printf("Certificate loaded into context\n");
 
         // Set client connection to SSL (perform SSL handshake)
+        printf("Creating new SSL object\n");
         ssl = SSL_new(ctx);                // Create SSL object
+        printf("Calling SSL_set_fd\n");
         SSL_set_fd(ssl, client_socket);    // Link SSL object to accepted TCP socket
+        printf("Done with SSL Stuff\n");
         if (SSL_accept(ssl) <= 0) {        // Perform SSL handshake
             printf("Unsuccessful client SSL handshake\n");
             ERR_print_errors_fp(stderr);
         } else {
+            printf("OOOOOOOO");
             SSL_write(ssl, reply, strlen(reply));
         }
+        printf("HEREHEREHERE");
 
         // Close SSL connection and free data structure
         SSL_shutdown(ssl);

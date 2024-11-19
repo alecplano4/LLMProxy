@@ -18,7 +18,7 @@ void proxy_initial_test(){
 
 }
 
-SSL_CTX *create_context()
+SSL_CTX *create_contex()
 {
     const SSL_METHOD *method;
     SSL_CTX *ctx;
@@ -35,15 +35,15 @@ SSL_CTX *create_context()
     return ctx;
 }
 
-void configure_context(SSL_CTX *ctx)
+void configure_contex(SSL_CTX **ctx)
 {
     /* Set the key and cert */
-    if (SSL_CTX_use_certificate_file(ctx, "ca.crt", SSL_FILETYPE_PEM) <= 0) {
+    if (SSL_CTX_use_certificate_file(*ctx, "ca.crt", SSL_FILETYPE_PEM) <= 0) {
         ERR_print_errors_fp(stderr);
         exit(EXIT_FAILURE);
     }
 
-    if (SSL_CTX_use_PrivateKey_file(ctx, "ca.key", SSL_FILETYPE_PEM) <= 0 ) {
+    if (SSL_CTX_use_PrivateKey_file(*ctx, "ca.key", SSL_FILETYPE_PEM) <= 0 ) {
         ERR_print_errors_fp(stderr);
         exit(EXIT_FAILURE);
     }
@@ -58,11 +58,11 @@ int mains()
     /* Ignore broken pipe signals */
     signal(SIGPIPE, SIG_IGN);
 
-    ctx = create_context();
+    ctx = create_contex();
 
-    configure_context(ctx);
+    configure_contex(&ctx);
 
-    sock = create_socket(4433, &server_addr);
+    sock = create_socket(9105, &server_addr);
 
     /* Handle connections */
     while(1) {
@@ -97,8 +97,8 @@ int mains()
 
 int main(int argc, char* argv[]) {
     //forward_header();
-    //proxy_initial_test();
-    mains();
+    proxy_initial_test();
+    //mains();
     printf("All tests Passed\n");
     return 0;
 }
