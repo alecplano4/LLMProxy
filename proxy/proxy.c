@@ -14,6 +14,11 @@
 #include <stdlib.h>
 #include <signal.h>
 
+#include <openssl/x509.h>
+#include <openssl/rsa.h>
+#include <openssl/err.h>
+#include <openssl/pem.h>
+
 
 
 // ----GLOBAL VARIABLES----------------------------------------------------------------------------
@@ -77,18 +82,101 @@ SSL_CTX *create_context() {
 }
 
 // Load certificate and private key into SSL Context object
-void configure_context(SSL_CTX *ctx) {
+void configure_context(SSL_CTX *ctx, const char* certificate, const char* key) {
     /* Set the key and cert */
-    if (SSL_CTX_use_certificate_file(ctx, "ca.crt", SSL_FILETYPE_PEM) <= 0) {
+    if (SSL_CTX_use_certificate_file(ctx, certificate, SSL_FILETYPE_PEM) <= 0) {
         ERR_print_errors_fp(stderr);
         exit(EXIT_FAILURE);
     }
 
-    if (SSL_CTX_use_PrivateKey_file(ctx, "ca.key", SSL_FILETYPE_PEM) <= 0 ) {
+    if (SSL_CTX_use_PrivateKey_file(ctx, key, SSL_FILETYPE_PEM) <= 0 ) {
         ERR_print_errors_fp(stderr);
         exit(EXIT_FAILURE);
     }
 }
+
+
+
+
+
+void create_server_certificate(void) {
+    // Create data structure for storing private key
+    EVP_PKEY * pkey;
+    pkey = EVP_PKEY_new();
+    RSA * rsa;
+
+    // Generate public/private key pair
+    rsa = RSA_generate_key(
+        2048,   /* number of bits for the key - 2048 is a sensible value */
+        RSA_F4, /* exponent - RSA_F4 is defined as 0x10001L */
+        NULL,   /* callback - can be NULL if we aren't displaying progress */
+        NULL    /* callback argument - not needed in this case */
+    );
+    if(rsa == NULL) {
+        printf("Failed to generate key for self-signed certificate. Exiting...\n");
+        ERR_get_error();
+        exit(EXIT_FAILURE);
+    }
+
+    // Assign key to data structure
+    EVP_PKEY_assign_RSA(pkey, rsa);
+
+    // Create x509 structure to represent certificate
+    X509 * x509;
+    x509 = X509_new();
+
+    // Set certificate serial number to 1 (some HTTP servers refuse certificates with serial number 0)
+    ASN1_INTEGER_set(X509_get_serialNumber(x509), 1);
+    
+    // Set lifetime of certificate to 1 year
+    X509_gmtime_adj(X509_get_notBefore(x509), 0);
+    X509_gmtime_adj(X509_get_notAfter(x509), 31536000L);
+
+    // Set certificate's public key to previously generate public key
+    X509_set_pubkey(x509, pkey);
+
+    // Get subject name to be used in self-signing the certificate
+    // (the name of the issuer is the same as the name of the subject)
+    X509_NAME * name;
+    name = X509_get_subject_name(x509);
+
+    // Provide country code ("C"), organization ("O") and common name ("CN")
+    X509_NAME_add_entry_by_txt(name, "C",  MBSTRING_ASC,
+                            (unsigned char *)"US", -1, -1, 0);
+    X509_NAME_add_entry_by_txt(name, "O",  MBSTRING_ASC,
+                            (unsigned char *)"Plano&Rolfe Inc.", -1, -1, 0);
+    X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC,
+                            (unsigned char *)"localhost", -1, -1, 0);
+
+    // Set the issuer name
+    X509_set_issuer_name(x509, name);
+
+    // Sign the certificate
+    X509_sign(x509, pkey, EVP_sha1());
+
+    // Write private key to disk as .pem file
+    FILE * f;
+    f = fopen("server_key.pem", "wb");
+    PEM_write_PrivateKey(
+        f,                  /* write the key to the file we've opened */
+        pkey,               /* use key from earlier */
+        EVP_des_ede3_cbc(), /* default cipher for encrypting the key on disk */
+        "replace_me",       /* passphrase required for decrypting the key on disk */
+        10,                 /* length of the passphrase string */
+        NULL,               /* callback for requesting a password */
+        NULL                /* data to pass to the callback */
+    );
+
+    // Write certificate to disk as .pem file
+    // FILE * f;
+    f = fopen("server_cert.pem", "wb");
+    PEM_write_X509(
+        f,   /* write the certificate to the file we've opened */
+        x509 /* our certificate */
+    );
+}
+
+
 
 void initialize_proxy(int listening_port) {
 
@@ -97,14 +185,10 @@ void initialize_proxy(int listening_port) {
     struct sockaddr_in server_addr;
     SSL_CTX *ctx;
 
-    /* Ignore broken pipe signals */
+    // Ignore broken pipe signals 
     signal(SIGPIPE, SIG_IGN);
 
-    // Prepare SSL Context object
-    ctx = create_context(); // Get SSL Context to store TLS configuration parameters
-    configure_context(ctx); // Load certificate and private key into context
-
-    // Create listening socket using TCP
+    // Create socket and begin listening using TCP
     listening_socket_fd = create_socket(listening_port, &server_addr);
 
     while(1) {
@@ -115,16 +199,25 @@ void initialize_proxy(int listening_port) {
 
         // Establish basic TCP connection with client (perform TCP handshake)
         printf("Prior to client connection\n");
-        int client = accept(listening_socket_fd, (struct sockaddr*)&client_addr, &len);
-        if (client < 0) {
+        int client_socket = accept(listening_socket_fd, (struct sockaddr*)&client_addr, &len);
+        if (client_socket < 0) {
             perror("Unable to accept");
             exit(EXIT_FAILURE);
         }
-        printf("Successful client connection\n");
+
+        // Create server certificate and save to disk
+        create_server_certificate();
+        printf("Certificate created\n");
+
+        // Prepare SSL Context object
+        ctx = create_context();                                      // Get SSL Context to store TLS configuration parameters
+        printf("Context created\n");
+        configure_context(ctx, "server_cert.pem", "server_key.pem"); // Load certificate and private key into context
+        printf("Certificate loaded into context\n");
 
         // Set client connection to SSL (perform SSL handshake)
         ssl = SSL_new(ctx);                // Create SSL object
-        SSL_set_fd(ssl, client);           // Link SSL object to accepted TCP socket
+        SSL_set_fd(ssl, client_socket);    // Link SSL object to accepted TCP socket
         if (SSL_accept(ssl) <= 0) {        // Perform SSL handshake
             printf("Unsuccessful client SSL handshake\n");
             ERR_print_errors_fp(stderr);
