@@ -11,7 +11,9 @@
 #include <errno.h>
 #include <unistd.h>
 #include <assert.h>
-
+#include <netinet/in.h> // Provides sockaddr_in struct
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 
 // ----GLOBAL VARIABLES----------------------------------------------------------------------------
@@ -19,9 +21,10 @@
 // ----STRUCT--------------------------------------------------------------------------------------
 
 //----FUNCTIONS------------------------------------------------------------------------------------
+int create_socket(int port, struct sockaddr_in* server_addr);
 void initialize_proxy(int listening_port);
-
-void proxy_server();
+SSL_CTX *create_context(void);
+void proxy_server(void);
 
 #endif
 //-------------------------------------------------------------------------------------------------
