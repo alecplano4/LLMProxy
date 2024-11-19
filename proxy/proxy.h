@@ -12,6 +12,12 @@
 #include <unistd.h>
 #include <assert.h>
 
+#include <openssl/bio.h>
+#include <openssl/err.h>
+#include <openssl/pem.h>
+#include <openssl/ssl.h>
+
+
 
 
 // ----GLOBAL VARIABLES----------------------------------------------------------------------------
@@ -22,6 +28,7 @@
 void initialize_proxy(int listening_port);
 
 void proxy_server();
+void ssl_init(SSL_CTX** ctx, const char *certfile, const char *keyfile);
 
 #endif
 //-------------------------------------------------------------------------------------------------

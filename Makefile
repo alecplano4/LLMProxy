@@ -25,18 +25,17 @@ all: $(SERVER_OUT) $(CLIENT_OUT) $(TEST_OUT)
 
 # Build the server executable
 $(SERVER_OUT): $(SERVER_SRC) $(SHARED_SRC)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ -lssl -lcrypto
 
 # Build the client executable
 $(CLIENT_OUT): $(CLIENT_SRC) $(SHARED_SRC)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ -lssl -lcrypto
 
 # Build the client executable
 $(TEST_OUT): $(TEST_SRC) $(SHARED_SRC) proxy/proxy.c client/client.c
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ -lssl -lcrypto
 
-test_client.out: 
-	gcc -o test_client.out openssl-bio-fetch.c -lssl -lcrypto
+
 
 # Clean up the build files
 clean:
