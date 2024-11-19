@@ -21,10 +21,12 @@
 
 //----FUNCTIONS------------------------------------------------------------------------------------
 // Given port number and pointer to address struct, create TCP socket,
-// bind to port number, and return socket file descriptor and address struct
+// bind to port number, and begin listening. Return socket file descriptor 
+// and address struct
 int create_socket(int port, struct sockaddr_in* server_addr)
 {
     int listening_socket_fd;
+    char IP_address[INET_ADDRSTRLEN];
 
     // Initialize fields of struct for server address
     memset(server_addr, 0, sizeof(struct sockaddr_in));  // Set structure to 0's, ensuring sin_zero is all zeros
@@ -43,10 +45,15 @@ int create_socket(int port, struct sockaddr_in* server_addr)
         exit(EXIT_FAILURE);
     }
 
-    if (listen(listening_socket_fd, 1) < 0) {
+    if (listen(listening_socket_fd, MAX_CLIENT_CONNECTIONS) < 0) {
         perror("Unable to listen");
         exit(EXIT_FAILURE);
     }
+
+    // Listen for incoming connections requests on "listening socket"
+    listen(listening_socket_fd, MAX_CLIENT_CONNECTIONS);
+    inet_ntop(AF_INET, &(server_addr->sin_addr), IP_address, INET_ADDRSTRLEN);
+    printf("Listening for incoming connection requests... \nIP Address: %s \nPort: %d\n\n", IP_address, port);
 
     return listening_socket_fd;
 }
@@ -88,8 +95,10 @@ void initialize_proxy(int listening_port) {
     // Declare variables
     int listening_socket_fd;
     struct sockaddr_in server_addr;
-    char IP_address[INET_ADDRSTRLEN];
     SSL_CTX *ctx;
+
+    /* Ignore broken pipe signals */
+    signal(SIGPIPE, SIG_IGN);
 
     // Prepare SSL Context object
     ctx = create_context(); // Get SSL Context to store TLS configuration parameters
@@ -98,28 +107,26 @@ void initialize_proxy(int listening_port) {
     // Create listening socket using TCP
     listening_socket_fd = create_socket(listening_port, &server_addr);
 
-    // Listen for incoming connections requests on "listening socket"
-    listen(listening_socket_fd, MAX_CLIENT_CONNECTIONS);
-    inet_ntop(AF_INET, &(server_addr.sin_addr), IP_address, INET_ADDRSTRLEN);
-    printf("Listening for incoming connection requests... \nIP Address: %s \nPort: %d\n\n", IP_address, listening_port);
-
     while(1) {
         struct sockaddr_in client_addr;
         unsigned int len = sizeof(client_addr);
         SSL *ssl;
         const char reply[] = "test\n";
 
-        // Accept client connection
+        // Establish basic TCP connection with client (perform TCP handshake)
+        printf("Prior to client connection\n");
         int client = accept(listening_socket_fd, (struct sockaddr*)&client_addr, &len);
         if (client < 0) {
             perror("Unable to accept");
             exit(EXIT_FAILURE);
         }
+        printf("Successful client connection\n");
 
-        // Set client connection to SSL
-        ssl = SSL_new(ctx);
-        SSL_set_fd(ssl, client);
-        if (SSL_accept(ssl) <= 0) {
+        // Set client connection to SSL (perform SSL handshake)
+        ssl = SSL_new(ctx);                // Create SSL object
+        SSL_set_fd(ssl, client);           // Link SSL object to accepted TCP socket
+        if (SSL_accept(ssl) <= 0) {        // Perform SSL handshake
+            printf("Unsuccessful client SSL handshake\n");
             ERR_print_errors_fp(stderr);
         } else {
             SSL_write(ssl, reply, strlen(reply));

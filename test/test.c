@@ -13,38 +13,9 @@
 void proxy_initial_test();
 
 
-
 void proxy_initial_test(){
     initialize_proxy(9105);
 
-}
-
-int create_socket(int port)
-{
-    int s;
-    struct sockaddr_in addr;
-
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);
-
-    s = socket(AF_INET, SOCK_STREAM, 0);
-    if (s < 0) {
-        perror("Unable to create socket");
-        exit(EXIT_FAILURE);
-    }
-
-    if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-        perror("Unable to bind");
-        exit(EXIT_FAILURE);
-    }
-
-    if (listen(s, 1) < 0) {
-        perror("Unable to listen");
-        exit(EXIT_FAILURE);
-    }
-
-    return s;
 }
 
 SSL_CTX *create_context()
@@ -82,6 +53,7 @@ int mains()
 {
     int sock;
     SSL_CTX *ctx;
+    struct sockaddr_in server_addr;
 
     /* Ignore broken pipe signals */
     signal(SIGPIPE, SIG_IGN);
@@ -90,7 +62,7 @@ int mains()
 
     configure_context(ctx);
 
-    sock = create_socket(4433);
+    sock = create_socket(4433, &server_addr);
 
     /* Handle connections */
     while(1) {

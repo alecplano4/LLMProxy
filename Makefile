@@ -22,6 +22,7 @@ TEST_OUT = test.out
 
 # Ensure both server and clients are both built by default
 all: $(SERVER_OUT) $(CLIENT_OUT) $(TEST_OUT)
+server: $(SERVER_OUT) 
 
 # Build the server executable
 $(SERVER_OUT): $(SERVER_SRC) $(SHARED_SRC)
@@ -31,7 +32,7 @@ $(SERVER_OUT): $(SERVER_SRC) $(SHARED_SRC)
 $(CLIENT_OUT): $(CLIENT_SRC) $(SHARED_SRC)
 	$(CC) $(CFLAGS) -o $@ $^ -lssl -lcrypto
 
-# Build the client executable
+# Build the test executable
 $(TEST_OUT): $(TEST_SRC) $(SHARED_SRC) proxy/proxy.c client/client.c
 	$(CC) $(CFLAGS) -o $@ $^ -lssl -lcrypto
 
