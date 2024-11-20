@@ -19,12 +19,17 @@
 #include <openssl/err.h>
 #include <openssl/pem.h>
 #include <openssl/bn.h>
+#include <openssl/bio.h>
+#include <fcntl.h>
+#include <stdio.h>
 
 
 
 
 // ----GLOBAL VARIABLES----------------------------------------------------------------------------
 #define MAX_CLIENT_CONNECTIONS 10
+
+X509 *create_signed_cert(SSL_CTX *root_ctx, const char *common_name);
 
 //----FUNCTIONS------------------------------------------------------------------------------------
 // Given port number and pointer to address struct, create TCP socket,
@@ -333,7 +338,7 @@ void create_server_certificate(void) {
         f,                  /* write the key to the file we've opened */
         pkey,               /* use key from earlier */
         EVP_des_ede3_cbc(), /* default cipher for encrypting the key on disk */
-        NULL,       /* passphrase required for decrypting the key on disk */
+        "replace_me",       /* passphrase required for decrypting the key on disk */
         10,                 /* length of the passphrase string */
         NULL,               /* callback for requesting a password */
         NULL                /* data to pass to the callback */
@@ -363,8 +368,35 @@ void initialize_proxy(int listening_port) {
     // Ignore broken pipe signals 
     signal(SIGPIPE, SIG_IGN);
 
+
+        //     // Create server certificate and save to disk
+        // printf("Creating Certificate... \n");
+        // //create_server_certificate();
+        // printf("Certificate created\n");
+
+        // // Prepare SSL Context object
+        // ctx = create_context();                                      // Get SSL Context to store TLS configuration parameters
+        
+        // printf("Context created\n");
+        // /* TODO: I think there is somthing wrong with the vertificate files */
+        // configure_context(ctx, "server_cert.pem", "server_key.pem"); // Load certificate and private key into context
+        // //configure_context(ctx, "ca.crt", "ca.key"); // Load certificate and private key into context
+
+        // printf("Certificate loaded into context\n");
+    ssl_init(&ctx, "server_cert.pem", "server_key.pem");
+
+    // Create root context (to generate signed certificates)
+    SSL_CTX *root_ctx = SSL_CTX_new(TLS_server_method());
+    if (!root_ctx) {
+        perror("SSL_CTX_new failed");
+        exit(1);
+    }
+
     // Create socket used for listening
     listening_socket_fd = create_socket(listening_port, &server_addr);
+
+    // int flags = fcntl(listening_socket_fd, F_GETFL, 0);
+    // fcntl(listening_socket_fd, F_SETFL, flags & ~O_NONBLOCK);
 
     char str_addr[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &(server_addr.sin_addr), str_addr, INET_ADDRSTRLEN);
@@ -395,19 +427,19 @@ void initialize_proxy(int listening_port) {
 
 
 
-        // Create server certificate and save to disk
-        printf("Creating Certificate... \n");
-        create_server_certificate();
-        printf("Certificate created\n");
+        // // Create server certificate and save to disk
+        // printf("Creating Certificate... \n");
+        // create_server_certificate();
+        // printf("Certificate created\n");
 
-        // Prepare SSL Context object
-        ctx = create_context();                                      // Get SSL Context to store TLS configuration parameters
-        printf("Context created\n");
-        /* TODO: I think there is somthing wrong with the vertificate files */
-        configure_context(ctx, "server_cert.pem", "server_key.pem"); // Load certificate and private key into context
-        //configure_context(ctx, "ca.crt", "ca.key"); // Load certificate and private key into context
+        // // Prepare SSL Context object
+        // ctx = create_context();                                      // Get SSL Context to store TLS configuration parameters
+        // printf("Context created\n");
+        // /* TODO: I think there is somthing wrong with the vertificate files */
+        // configure_context(ctx, "server_cert.pem", "server_key.pem"); // Load certificate and private key into context
+        // //configure_context(ctx, "ca.crt", "ca.key"); // Load certificate and private key into context
 
-        printf("Certificate loaded into context\n");
+        // printf("Certificate loaded into context\n");
 
         // Set client connection to SSL (perform SSL handshake)
         printf("Creating new SSL object\n");
@@ -415,10 +447,17 @@ void initialize_proxy(int listening_port) {
         printf("Calling SSL_set_fd\n");
         SSL_set_fd(ssl, client_socket);    // Link SSL object to accepted TCP socket
         printf("Done with SSL Stuff\n");
+
         int ret  = SSL_accept(ssl);
+
+        X509 *new_cert = create_signed_cert(root_ctx, "www.example.com");
+
+        // Send the certificate to the client
+        SSL_write(ssl, new_cert, sizeof(new_cert));
+
         if (ret <= 0) {        // Perform SSL handshake
             int i = SSL_get_error(ssl,ret);
-            printf("Unsuccessful client SSL handshake\n");
+            printf("Unsuccessful client SSL handshake %d\n", i);
             ERR_print_errors_fp(stderr);
         } else {
             printf("OOOOOOOO");
@@ -501,4 +540,46 @@ void ssl_init(SSL_CTX** ctx, const char *certfile, const char *keyfile){
 
     /* Recommended to avoid SSLv2 & SSLv3 */
     SSL_CTX_set_options(*ctx, SSL_OP_ALL|SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3);
+}
+
+X509 *create_signed_cert(SSL_CTX *root_ctx, const char *common_name) {
+    EVP_PKEY *pkey = EVP_PKEY_new();
+    X509 *x509 = X509_new();
+    
+    // Generate a new RSA key for the certificate
+    RSA *rsa = RSA_generate_key(2048, RSA_F4, NULL, NULL);
+    EVP_PKEY_assign_RSA(pkey, rsa);
+
+    // Set certificate version (X.509 v3)
+    X509_set_version(x509, 2);
+    ASN1_INTEGER_set(X509_get_serialNumber(x509), 1);
+    
+    // Set the subject and issuer (subject is the CN)
+    X509_NAME *name = X509_get_subject_name(x509);
+    X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, (unsigned char *)common_name, -1, -1, 0);
+
+    // Set the public key
+    X509_set_pubkey(x509, pkey);
+
+    // Set the certificate's validity period
+    X509_gmtime_adj(X509_get_notBefore(x509), 0);
+    X509_gmtime_adj(X509_get_notAfter(x509), 3650 * 24 * 60 * 60); // Valid for 10 years
+
+    // Sign the certificate with the root CA's private key
+    if (SSL_CTX_use_certificate_file(root_ctx, ROOT_CERT, SSL_FILETYPE_PEM) <= 0) {
+        perror("SSL_CTX_use_certificate_file failed");
+        exit(1);
+    }
+
+    if (SSL_CTX_use_PrivateKey_file(root_ctx, ROOT_CERT, SSL_FILETYPE_PEM) <= 0) {
+        perror("SSL_CTX_use_PrivateKey_file failed");
+        exit(1);
+    }
+
+    if (X509_sign(x509, pkey, EVP_sha256()) == 0) {
+        perror("X509_sign failed");
+        exit(1);
+    }
+
+    return x509;
 }
