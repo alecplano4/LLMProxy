@@ -35,6 +35,15 @@ typedef struct header_elems {
 
 typedef struct client_server{
     bool client_read;
+
+    int client_fd;
+    struct sockaddr_in client_addr;
+    unsigned int client_addr_len;
+
+    header_elems* h;
+
+    int server_fd;
+
     struct client_server* next;
 } client_server_t;
 

@@ -263,6 +263,10 @@ void create_server_certificate(const char *root_cert_file, const char *root_key_
     X509_free(server_cert);
 
     printf("Server certificate and private key generated and signed successfully.\n");
+<<<<<<< HEAD
+
+=======
+>>>>>>> c86a972380cc83071a2836ed7611a1a91d130fb3
 }
 
 
@@ -381,9 +385,6 @@ void run_proxy(int listening_port, bool tunnel_mode) {
     FD_ZERO(&read_fds);
 
     while(1) {
-        /* Potential client local variables */
-        struct sockaddr_in client_addr;
-        unsigned int sockaddr_len = sizeof(client_addr);
 
         //TODO: create a set_fds function that loops through linked list and adds fds to sets
 
@@ -408,24 +409,31 @@ void run_proxy(int listening_port, bool tunnel_mode) {
             /* Current implementation does not work concurently 
                 it runs all instructions for a server at once*/
             if (FD_ISSET(p->listening_fd, &read_fds)) {
-                int client_fd = accept(p->listening_fd,
-                                       (struct sockaddr*)&(client_addr),
-                                       &sockaddr_len);
+                client_server_t* cs = malloc(sizeof(client_server_t));
+                /* Potential client local variables */
+                
+                cs->client_addr_len = sizeof(cs->client_addr);
+
+
+
+                cs->client_fd = accept(p->listening_fd,
+                                       (struct sockaddr*)&(cs->client_addr),
+                                       &(cs->client_addr_len));
                 uint8_t buf[10000];
-                int bytes_read = read(client_fd, buf, 10000);
+                int bytes_read = read(cs->client_fd, buf, 10000);
                 uint8_t header_copy_for_server[10000];
                 memcpy(header_copy_for_server, buf, bytes_read);
                 printf("Header Recieved from client:\n");
                 printf("%s\n\n", header_copy_for_server);
 
                 printf("parsing the header:\n");
-                header_elems* h = proxy_parse_header((char*)buf);
+                cs->h = proxy_parse_header((char*)buf);
 
-                printf("HOST = %s\n\n\n",h->host);
+                printf("HOST = %s\n\n\n",cs->h->host);
 
 
                 printf("Connecting to server\n\n");
-                int server_fd = proxy_connect_server(h);
+                int server_fd = proxy_connect_server(cs->h);
                 int l = write(server_fd, header_copy_for_server, bytes_read);
 
                 bzero(buf, 10000);
@@ -447,7 +455,7 @@ void run_proxy(int listening_port, bool tunnel_mode) {
                 //               &server_header, &server_header_size);
                 //write(client_fd, server_resp_buf, server_resp_buf_size);
                 printf("relaying data back to client\n");
-                write(client_fd, buf, b);
+                write(cs->client_fd, buf, b);
 
 
             }else{
