@@ -263,10 +263,6 @@ void create_server_certificate(const char *root_cert_file, const char *root_key_
     X509_free(server_cert);
 
     printf("Server certificate and private key generated and signed successfully.\n");
-<<<<<<< HEAD
-
-=======
->>>>>>> c86a972380cc83071a2836ed7611a1a91d130fb3
 }
 
 
