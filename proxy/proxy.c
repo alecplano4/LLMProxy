@@ -219,20 +219,20 @@ void create_server_certificate(const char *root_cert_file, const char *root_key_
     X509_set_pubkey(server_cert, server_key);
 
 
-    X509_EXTENSION *san_extension  = X509_EXTENSION_new();
-    if (!X509_EXTENSION_set_object(san_extension, OBJ_nid2obj(NID_subject_alt_name))) {
-        fprintf(stderr, "Error setting SAN extension object\n");
-        return;
-    }
+    // X509_EXTENSION *san_extension  = X509_EXTENSION_new();
+    // if (!X509_EXTENSION_set_object(san_extension, OBJ_nid2obj(NID_subject_alt_name))) {
+    //     fprintf(stderr, "Error setting SAN extension object\n");
+    //     return;
+    // }
     // // SAN format: "DNS:hostname1,DNS:hostname2,IP:192.168.1.1"
     // if (!X509_EXTENSION_set_data(san_extension, (unsigned char*)hostname)) {
     //     fprintf(stderr, "Error setting SAN extension data\n");
     //     return;
     // }
-    if (!X509_add_ext(server_cert, san_extension, -1)) {
-        fprintf(stderr, "Error adding SAN extension to server certificate\n");
-        return;
-    }
+    // if (!X509_add_ext(server_cert, san_extension, -1)) {
+    //     fprintf(stderr, "Error adding SAN extension to server certificate\n");
+    //     return;
+    // }
 
     // Sign the server certificate with the root private key
     X509_sign(server_cert, root_key, EVP_sha256());
@@ -263,60 +263,6 @@ void create_server_certificate(const char *root_cert_file, const char *root_key_
     X509_free(server_cert);
 
     printf("Server certificate and private key generated and signed successfully.\n");
-
-    // // Create x509 structure to represent server certificate
-    // X509 * x509;
-    // x509 = X509_new();
-
-    // // Set certificate serial number to 1 (some HTTP servers refuse certificates with serial number 0)
-    // ASN1_INTEGER_set(X509_get_serialNumber(x509), 1);
-    
-    // // Set lifetime of certificate to 1 year
-    // X509_gmtime_adj(X509_get_notBefore(x509), 0);
-    // X509_gmtime_adj(X509_get_notAfter(x509), 31536000L);
-
-    // // Set certificate's public key to previously generated public key
-    // X509_set_pubkey(x509, pkey);
-
-    // // Get subject name to be used in self-signing the certificate
-    // // (the name of the issuer is the same as the name of the subject)
-    // X509_NAME * name;
-    // name = X509_get_subject_name(x509);
-
-    // // Provide country code ("C"), organization ("O") and common name ("CN")
-    // X509_NAME_add_entry_by_txt(name, "C",  MBSTRING_ASC,
-    //                         (unsigned char *)"US", -1, -1, 0);
-    // X509_NAME_add_entry_by_txt(name, "O",  MBSTRING_ASC,
-    //                         (unsigned char *)"Plano&Rolfe Inc.", -1, -1, 0);
-    // X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC,
-    //                         (unsigned char *)"localhost", -1, -1, 0);
-
-    // // Set the issuer name
-    // X509_set_issuer_name(x509, name);
-
-    // // Sign the certificate
-    // X509_sign(x509, pkey, EVP_sha1());
-
-    // // Write private key to disk as .pem file
-    // FILE * f;
-    // f = fopen("server_key.pem", "wb");
-    // PEM_write_PrivateKey(
-    //     f,                  /* write the key to the file we've opened */
-    //     pkey,               /* use key from earlier */
-    //     EVP_des_ede3_cbc(), /* default cipher for encrypting the key on disk */
-    //     "replace_me",       /* passphrase required for decrypting the key on disk */
-    //     10,                 /* length of the passphrase string */
-    //     NULL,               /* callback for requesting a password */
-    //     NULL                /* data to pass to the callback */
-    // );
-
-    // // Write certificate to disk as .pem file
-    // // FILE * f;
-    // f = fopen("server_cert.pem", "wb");
-    // PEM_write_X509(
-    //     f,   /* write the certificate to the file we've opened */
-    //     x509 /* our certificate */
-    // );
 }
 
 
@@ -370,15 +316,12 @@ void initialize_proxy(int listening_port) {
             send(client_socket, response, strlen(response), 0);
             printf("Sent response to client:\n%s\n", response);
 
-            // Here, you would establish a connection to the target server
-            // and relay data between the client and server (not implemented here).
-
             // Create server certificate and save to disk
             create_server_certificate(root_cert_file, root_key_file, hostname, server_cert_file, server_key_file);
             printf("\n--------------------\nCERTIFICATE CREATED\n--------------------\n\n");
 
             // Prepare SSL Context object
-            ctx = create_context();                                      // Get SSL Context to store TLS configuration parameters
+            ctx = create_context();                                    // Get SSL Context to store TLS configuration parameters
             printf("Context created\n");
             configure_context(ctx, server_cert_file, server_key_file); // Load certificate and private key into context
             printf("Certificate loaded into context\n");
