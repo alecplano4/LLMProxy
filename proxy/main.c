@@ -15,17 +15,24 @@
 int main(int argc, char* argv[]) {
     
     // Declare variables
-    int LISTENING_PORT; 
+    int listening_port;
+    bool tunnel_mode = false; 
 
     // Get port number from argv
-    if(argc != 2) {
+    if(argc != 2 && argc!=3) {
         printf("Usage: %s <port>\n", argv[0]);
         return -1;
     }
-    LISTENING_PORT = atoi(argv[1]);
+    listening_port = atoi(argv[1]);
+    if(argc == 3){
+        if(strcmp(argv[2],"-tunnel") == 0){
+            printf("tunnelmode\n");
+            tunnel_mode = true;
+        }
+    }
 
-    // Initialize server
-    initialize_proxy(LISTENING_PORT);
+    //initialize_proxy(LISTENING_PORT);
+    run_proxy(listening_port, tunnel_mode);
 }
 
 //-------------------------------------------------------------------------------------------------

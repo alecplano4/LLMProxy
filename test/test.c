@@ -6,6 +6,8 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <openssl/ssl.h>
+#include <stdbool.h>
+
 #include <openssl/err.h>
 
 #include "../proxy/proxy.h"
@@ -14,8 +16,8 @@ void proxy_initial_test();
 
 
 void proxy_initial_test(){
-    initialize_proxy(9105);
-
+    //initialize_proxy(9105);
+    run_proxy(9105, true);
 }
 
 SSL_CTX *create_contex()

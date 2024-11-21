@@ -6,6 +6,7 @@
 #include "proxy.h"
 
 #include <stdio.h>
+#include <stdint.h>
 #include <sys/socket.h>
 #include <errno.h>      // Allows for printing of perror()
 #include <arpa/inet.h>
@@ -22,6 +23,9 @@
 #include <openssl/bio.h>
 #include <fcntl.h>
 #include <stdio.h>
+
+#include <sys/types.h>
+#include <netdb.h>
 
 
 
@@ -201,7 +205,7 @@ void create_server_certificate(const char *root_cert_file, const char *root_key_
     X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, (unsigned char *) hostname, -1, -1, 0);
 
     // Add the server's private key to the CSR
-    X509_REQ_sign(csr, server_key, EVP_sha256());
+    X509_REQ_sign(csr, root_key, EVP_sha256());
 
     // Create the server certificate and sign it with the root certificate
     server_cert = X509_new();
@@ -212,6 +216,22 @@ void create_server_certificate(const char *root_cert_file, const char *root_key_
     X509_set_subject_name(server_cert, X509_REQ_get_subject_name(csr));
     X509_set_issuer_name(server_cert, X509_get_subject_name(root_cert));  // Root is the issuer
     X509_set_pubkey(server_cert, server_key);
+
+
+    X509_EXTENSION *san_extension  = X509_EXTENSION_new();
+    if (!X509_EXTENSION_set_object(san_extension, OBJ_nid2obj(NID_subject_alt_name))) {
+        fprintf(stderr, "Error setting SAN extension object\n");
+        return;
+    }
+    // // SAN format: "DNS:hostname1,DNS:hostname2,IP:192.168.1.1"
+    // if (!X509_EXTENSION_set_data(san_extension, (unsigned char*)hostname)) {
+    //     fprintf(stderr, "Error setting SAN extension data\n");
+    //     return;
+    // }
+    if (!X509_add_ext(server_cert, san_extension, -1)) {
+        fprintf(stderr, "Error adding SAN extension to server certificate\n");
+        return;
+    }
 
     // Sign the server certificate with the root private key
     X509_sign(server_cert, root_key, EVP_sha256());
@@ -226,6 +246,7 @@ void create_server_certificate(const char *root_cert_file, const char *root_key_
     
     printf("File name of server certificate: %s\n", server_certificate_filename);
     printf("File name of server pirvate key: %s\n", server_private_key_filename);
+
 
     fp = fopen(server_certificate_filename, "w");
     PEM_write_X509(fp, server_cert);
@@ -300,85 +321,11 @@ void create_server_certificate(const char *root_cert_file, const char *root_key_
 }
 
 
-void initialize_proxy(int listening_port) {
-
-    const char *root_cert_file = "ca.crt";
-    const char *root_key_file = "ca.key";
-    
-    // Declare variables
-    int listening_socket_fd;
-    struct sockaddr_in server_addr;
-    SSL_CTX *ctx;
-
-    // Ignore broken pipe signals 
-    signal(SIGPIPE, SIG_IGN);
-
-    // Create socket and begin listening using TCP
-    listening_socket_fd = create_socket(listening_port, &server_addr);
-
-    while(1) {
-        struct sockaddr_in client_addr;
-        unsigned int len = sizeof(client_addr);
-        SSL *ssl;
-        const char reply[] = "test\n";
-
-        // Establish basic TCP connection with client (perform TCP handshake)
-        printf("Prior to client connection\n");
-        int client_socket = accept(listening_socket_fd, (struct sockaddr*)&client_addr, &len);
-        if (client_socket < 0) {
-            perror("Unable to accept");
-            exit(EXIT_FAILURE);
-        }
-        printf("Client TCP handshake successful\n");
-
-        // Receive client data
-        char request[200];
-        char hostname[100];
-        int bytes_received = recv(client_socket, request, sizeof(request), 0);
-        printf("Bytes received: %d\n", bytes_received);
-        printf("Message: %s\n", request);
-        extract_hostname(request, hostname);
-        printf("Hostname: %s\n", hostname);
-
-        // Create server certificate and save to disk
-        create_server_certificate(root_cert_file, root_key_file, hostname);
-        printf("\n--------------------\nCERTIFICATE CREATED\n--------------------\n\n");
-
-        // Prepare SSL Context object
-        ctx = create_context();                                      // Get SSL Context to store TLS configuration parameters
-        printf("Context created\n");
-        configure_context(ctx, "en.wikipedia.org.crt", "en.wikipedia.org.key"); // Load certificate and private key into context
-        printf("Certificate loaded into context\n");
-
-        // Set client connection to SSL (perform SSL handshake)
-        ssl = SSL_new(ctx);                // Create SSL object
-        SSL_set_fd(ssl, client_socket);    // Link SSL object to accepted TCP socket
-        printf("SSL object created and linked to TCP socket\n");
-
-        if (SSL_accept(ssl) <= 0) {        // Perform SSL handshake
-            printf("Unsuccessful client SSL handshake\n");
-            ERR_print_errors_fp(stderr);
-        } else {
-            printf("Successful client SSL handshake\n");
-            SSL_write(ssl, reply, strlen(reply));
-        }
-
-        // Close SSL connection and free data structure
-        SSL_shutdown(ssl);
-        SSL_free(ssl);
-    }
-    close(listening_socket_fd);
-}
-
-
 // void initialize_proxy(int listening_port) {
 
-//     // Declare files
 //     const char *root_cert_file = "ca.crt";
 //     const char *root_key_file = "ca.key";
-//     const char *server_cert_file = "server.crt";
-//     const char *server_key_file = "server.key";
-
+    
 //     // Declare variables
 //     int listening_socket_fd;
 //     struct sockaddr_in server_addr;
@@ -387,39 +334,14 @@ void initialize_proxy(int listening_port) {
 //     // Ignore broken pipe signals 
 //     signal(SIGPIPE, SIG_IGN);
 
-//     // Prepare SSL Context object
-//     ctx = create_context();                                      // Get SSL Context to store TLS configuration parameters
-//     printf("Context created\n");
-//     configure_context(ctx, "server_cert.pem", "server_key.pem"); // Load certificate and private key into context
-//     //configure_context(ctx, "ca.crt", "ca.key"); // Load certificate and private key into context
-//     // printf("Certificate loaded into context\n");
-//     // ssl_init(&ctx, "server_cert.pem", "server_key.pem");
-
-//     // Create root context (to generate signed certificates)
-//     SSL_CTX *root_ctx = SSL_CTX_new(TLS_server_method());
-//     if (!root_ctx) {
-//         perror("SSL_CTX_new failed");
-//         exit(1);
-//     }
-
-//     // Create socket used for listening
+//     // Create socket and begin listening using TCP
 //     listening_socket_fd = create_socket(listening_port, &server_addr);
 
-//     // int flags = fcntl(listening_socket_fd, F_GETFL, 0);
-//     // fcntl(listening_socket_fd, F_SETFL, flags & ~O_NONBLOCK);
-
-//     char str_addr[INET_ADDRSTRLEN];
-//     inet_ntop(AF_INET, &(server_addr.sin_addr), str_addr, INET_ADDRSTRLEN);
-//     printf("Server Listening at address %.*s on port %d\n", INET_ADDRSTRLEN, str_addr, server_addr.sin_port);
-
 //     while(1) {
-//         /* Declare client address variables */
 //         struct sockaddr_in client_addr;
 //         unsigned int len = sizeof(client_addr);
 //         SSL *ssl;
-
-//         /* TODO variable reply */
-//         const char reply[] = "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>Simple Web Page</title></head><body><h1>Hello, World!</h1></body></html>";
+//         const char reply[] = "test\n";
 
 //         // Establish basic TCP connection with client (perform TCP handshake)
 //         printf("Prior to client connection\n");
@@ -428,167 +350,306 @@ void initialize_proxy(int listening_port) {
 //             perror("Unable to accept");
 //             exit(EXIT_FAILURE);
 //         }
+//         printf("Client TCP handshake successful\n");
 
-//         /* NEED TO READ HTTP GET FIRST BEFORE WE CAN DO ANYTHIGN*/
-//         // char buf[10000] = {0};
-//         // read(client_socket, buf, 10000);
-//         // printf("%.*s\n\n\n",100, buf);
-
-
+//         // Receive client data
+//         char request[200];
+//         char hostname[100];
+//         int bytes_received = recv(client_socket, request, sizeof(request), 0);
+//         printf("Bytes received: %d\n", bytes_received);
+//         printf("Message: %s\n", request);
+//         extract_hostname(request, hostname);
+//         printf("Hostname: %s\n", hostname);
 
 //         // Create server certificate and save to disk
-//         printf("Creating Certificate... \n");
-//         create_server_certificate(root_cert_file, root_key_file);
-//         printf("Certificate created\n");
+//         create_server_certificate(root_cert_file, root_key_file, hostname);
+//         printf("\n--------------------\nCERTIFICATE CREATED\n--------------------\n\n");
 
-//         // // Prepare SSL Context object
-//         // ctx = create_context();                                      // Get SSL Context to store TLS configuration parameters
-//         // printf("Context created\n");
-//         // /* TODO: I think there is somthing wrong with the vertificate files */
-//         // configure_context(ctx, "server_cert.pem", "server_key.pem"); // Load certificate and private key into context
-//         // //configure_context(ctx, "ca.crt", "ca.key"); // Load certificate and private key into context
-
-//         // printf("Certificate loaded into context\n");
+//         // Prepare SSL Context object
+//         ctx = create_context();                                      // Get SSL Context to store TLS configuration parameters
+//         printf("Context created\n");
+//         configure_context(ctx, "en.wikipedia.org.crt", "en.wikipedia.org.key"); // Load certificate and private key into context
+//         printf("Certificate loaded into context\n");
 
 //         // Set client connection to SSL (perform SSL handshake)
-//         printf("Creating new SSL object\n");
 //         ssl = SSL_new(ctx);                // Create SSL object
-//         printf("Calling SSL_set_fd\n");
 //         SSL_set_fd(ssl, client_socket);    // Link SSL object to accepted TCP socket
-//         printf("Done with SSL Stuff\n");
+//         printf("SSL object created and linked to TCP socket\n");
 
-//         int ret  = SSL_accept(ssl);
-
-//         X509 *new_cert = create_signed_cert(root_ctx, "www.example.com");
-
-//         // Send the certificate to the client
-//         SSL_write(ssl, new_cert, sizeof(new_cert));
-
-//         if (ret <= 0) {        // Perform SSL handshake
-//             int i = SSL_get_error(ssl,ret);
-//             printf("Unsuccessful client SSL handshake %d\n", i);
+//         if (SSL_accept(ssl) <= 0) {        // Perform SSL handshake
+//             printf("Unsuccessful client SSL handshake\n");
 //             ERR_print_errors_fp(stderr);
 //         } else {
-//             printf("OOOOOOOO");
+//             printf("Successful client SSL handshake\n");
 //             SSL_write(ssl, reply, strlen(reply));
 //         }
-//         printf("HEREHEREHERE");
 
 //         // Close SSL connection and free data structure
 //         SSL_shutdown(ssl);
 //         SSL_free(ssl);
 //     }
-
-//     // NOTE: Alec's code, may need to uncomment
-//     // int clientfd;
-//     // struct sockaddr_in peeraddr;
-//     // socklen_t peeraddr_len = sizeof(peeraddr);
-    
-//     // SSL_CTX* ctx;
-//     // ssl_init(&ctx, "ca.crt", "ca.key");
-
-//     //clientfd = accept(servfd, (struct sockaddr *)&peeraddr, &peeraddr_len);
-
-//     // if (clientfd < 0){
-//     //     printf("accept()");
-//     //     exit(EXIT_FAILURE);
-//     // }
-
-//     //ssl_client_init(&client, clientfd, SSLMODE_SERVER);
-
-//     // while(1){
-//     //     //add port to list
-//     //}
-
-//     // Close socket
 //     close(listening_socket_fd);
-
 // }
 
+proxy_t* intialize_proxy(int listening_port) {
+    proxy_t* new_proxy = malloc(sizeof(proxy_t));
 
-    //Assumption
-    //ALEC: Assume getting an encrypted messgae
-    //funciton will need string header, key from client to decrypte
+    //new_proxy->client_read = true;
+    new_proxy->listening_fd = create_socket(listening_port, &(new_proxy->proxy_addr));
+    new_proxy->head = NULL;
 
-// void proxy_connect_client(){
-
-// }
-
-// void ssl_init(SSL_CTX** ctx, const char *certfile, const char *keyfile){
-
-//     SSL_library_init();
-//     OpenSSL_add_all_algorithms();
-//     SSL_load_error_strings();
-//     #if OPENSSL_VERSION_MAJOR < 3
-//     ERR_load_BIO_strings(); // deprecated since OpenSSL 3.0
-//     #endif
-//     ERR_load_crypto_strings();
-
-//     /* create the SSL server context */
-//     *ctx = SSL_CTX_new(TLS_method());
-//     if (!ctx) {
-//         printf("SSL_CTX_new()");
-//         exit(EXIT_FAILURE);
-//     }
-
-//     /* Load certificate and private key files, and check consistency */
-//     if (certfile && keyfile) {
-//         if (SSL_CTX_use_certificate_file(*ctx, certfile,  SSL_FILETYPE_PEM) != 1)
-//             printf("SSL_CTX_use_certificate_file failed");
-
-//         if (SSL_CTX_use_PrivateKey_file(*ctx, keyfile, SSL_FILETYPE_PEM) != 1)
-//             printf("SSL_CTX_use_PrivateKey_file failed");
-
-//         /* Make sure the key and certificate file match. */
-//         if (SSL_CTX_check_private_key(*ctx) != 1)
-//             printf("SSL_CTX_check_private_key failed");
-//         else
-//             printf("certificate and private key loaded and verified\n");
-//     }
+    return new_proxy;
+}
 
 
-//     /* Recommended to avoid SSLv2 & SSLv3 */
-//     SSL_CTX_set_options(*ctx, SSL_OP_ALL|SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3);
-// }
-
-// X509 *create_signed_cert(SSL_CTX *root_ctx, const char *common_name) {
-//     EVP_PKEY *pkey = EVP_PKEY_new();
-//     X509 *x509 = X509_new();
+void run_proxy(int listening_port, bool tunnel_mode) {
     
-//     // Generate a new RSA key for the certificate
-//     RSA *rsa = RSA_generate_key(2048, RSA_F4, NULL, NULL);
-//     EVP_PKEY_assign_RSA(pkey, rsa);
+    proxy_t* p = intialize_proxy(listening_port);
+    printf("DEBUG: Created Proxy object\n");
 
-//     // Set certificate version (X.509 v3)
-//     X509_set_version(x509, 2);
-//     ASN1_INTEGER_set(X509_get_serialNumber(x509), 1);
-    
-//     // Set the subject and issuer (subject is the CN)
-//     X509_NAME *name = X509_get_subject_name(x509);
-//     X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, (unsigned char *)common_name, -1, -1, 0);
+    fd_set read_fds; 
+    FD_ZERO(&read_fds);
 
-//     // Set the public key
-//     X509_set_pubkey(x509, pkey);
+    while(1) {
+        /* Potential client local variables */
+        struct sockaddr_in client_addr;
+        unsigned int sockaddr_len = sizeof(client_addr);
 
-//     // Set the certificate's validity period
-//     X509_gmtime_adj(X509_get_notBefore(x509), 0);
-//     X509_gmtime_adj(X509_get_notAfter(x509), 3650 * 24 * 60 * 60); // Valid for 10 years
+        //TODO: create a set_fds function that loops through linked list and adds fds to sets
 
-//     // Sign the certificate with the root CA's private key
-//     if (SSL_CTX_use_certificate_file(root_ctx, ROOT_CERT, SSL_FILETYPE_PEM) <= 0) {
-//         perror("SSL_CTX_use_certificate_file failed");
-//         exit(1);
-//     }
+        /* Always want to be listening for new connection*/
+        FD_SET(p->listening_fd, &read_fds);
 
-//     if (SSL_CTX_use_PrivateKey_file(root_ctx, ROOT_CERT, SSL_FILETYPE_PEM) <= 0) {
-//         perror("SSL_CTX_use_PrivateKey_file failed");
-//         exit(1);
-//     }
+        int select_ret = select(FD_SETSIZE, &read_fds, NULL, NULL, NULL);
 
-//     if (X509_sign(x509, pkey, EVP_sha256()) == 0) {
-//         perror("X509_sign failed");
-//         exit(1);
-//     }
+        /* error with select */
+        if (select_ret == -1) {
+            printf("ERROR: select with errno: %d\n", errno);
+            exit(EXIT_FAILURE);
+        }
+        /* No data available on any file descriptors */
+        else if (select_ret == 0) {
+            #ifdef ALEC_DEBUG
+            printf("DEBUG: No data available due to timeout\n");
+            #endif
+        }
+        /* socket file descriptors ready for reading */
+        else {
+            /* Current implementation does not work concurently 
+                it runs all instructions for a server at once*/
+            if (FD_ISSET(p->listening_fd, &read_fds)) {
+                int client_fd = accept(p->listening_fd,
+                                       (struct sockaddr*)&(client_addr),
+                                       &sockaddr_len);
+                uint8_t buf[10000];
+                int bytes_read = read(client_fd, buf, 10000);
+                uint8_t header_copy_for_server[10000];
+                memcpy(header_copy_for_server, buf, bytes_read);
+                printf("Header Recieved from client:\n");
+                printf("%s\n\n", header_copy_for_server);
 
-//     return x509;
-// }
+                printf("parsing the header:\n");
+                header_elems* h = proxy_parse_header((char*)buf);
+
+                printf("HOST = %s\n\n\n",h->host);
+
+
+                printf("Connecting to server\n\n");
+                int server_fd = proxy_connect_server(h);
+                int l = write(server_fd, header_copy_for_server, bytes_read);
+
+                bzero(buf, 10000);
+                int b = read(server_fd, buf, 10000);
+                printf("recieved messgae from server len = %d:\n", b);
+                printf("%s\n", buf);
+                
+                // int c = read(server_fd, buf+b, 10000-b);
+                // printf("recieved messgae from server len = %d:\n", b);
+                // printf("%s\n", buf);
+
+
+                char* server_resp_buf;
+                int server_resp_buf_size;
+                char* server_header;
+                int server_header_size;
+                // proxy_read_server(server_fd,
+                //               &server_resp_buf, &server_resp_buf_size,
+                //               &server_header, &server_header_size);
+                //write(client_fd, server_resp_buf, server_resp_buf_size);
+                printf("relaying data back to client\n");
+                write(client_fd, buf, b);
+
+
+            }else{
+                //for all fds in the list add call relay
+            }
+        }
+    }
+    proxy_clean(p);
+}
+
+
+header_elems* proxy_parse_header(char* header)
+{
+    header_elems* h = (header_elems*)calloc(1,sizeof(header_elems));
+
+    char* nl_delim = "\n";
+    char* cr_delim = "\r";
+    char* space_delim = " ";
+    char* col_delim = ":";
+
+    h->max_age = NULL;
+
+    char* command = strtok(header, space_delim);
+
+    /* while there are commands */
+    while(command != NULL){
+        if(strcmp(command, "GET") == 0 || strcmp(command, "HEAD") == 0) {
+            h->url = strtok(NULL, space_delim);
+            printf("URL = %s\n", h->url);
+            char* http_v = strtok(NULL, cr_delim);
+            printf("HTTP_v = %s\n", http_v);
+
+        }else if(strcmp(command, "\nHost") == 0) {
+
+            h->host = strtok(NULL, cr_delim);
+            h->host++;
+            if(strstr(h->host, ":") == NULL){
+                h->port = "80";
+            }else{
+                char* host_port_delim = (strstr(h->host, ":"));
+                *host_port_delim = '\0';
+                h->port = host_port_delim+1;
+            }
+            printf("HOST = %s\n", h->host);
+            printf("PORT = %s\n", h->port);
+        }else if(strcmp(command, "\nAccept") == 0) {
+            char* a = strtok(NULL, cr_delim);
+
+        }else if(strcmp(command, "\nProxy-Connection") == 0) {
+            char* keep_alive = strtok(NULL, cr_delim);
+            printf("BREKIGN while\n");
+            break;
+        }else if(strcmp(command, "\nContent-Length") == 0) {
+            char* len = strtok(NULL, cr_delim);
+            len++;
+            h->data_len = len;
+
+        }else if(strcmp(command, "\nCache-Control") == 0) {
+            strtok(NULL, "=");
+            //Cache-Control: max-age=N
+            char* max_age = strtok(NULL, cr_delim);
+            h->max_age = max_age;
+
+        }else{
+            strtok(NULL, cr_delim);
+        }
+
+        /* get the next command */
+        command = strtok(NULL, col_delim);
+
+    }
+    printf("RETURNING\n");
+
+    return h;
+}
+
+int proxy_connect_server(header_elems* header)
+{
+    int s_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (s_fd == -1) {
+        printf("ERROR: creating socket with erro: %d\n", errno);
+        exit(EXIT_FAILURE);
+    }
+
+    struct addrinfo hints;
+    struct addrinfo *result, *curr;
+
+    memset(&hints, 0, sizeof(struct addrinfo));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+
+
+
+    int s = getaddrinfo(header->host, header->port, &hints, &result);
+    if (s != 0) {
+        printf("ERROR: getaddrinfo: %s\n", gai_strerror(s));
+        exit(EXIT_FAILURE);
+    }
+
+
+
+    for (curr = result; curr != NULL; curr = curr->ai_next) {
+        if (connect(s_fd, curr->ai_addr, curr->ai_addrlen) != -1)
+            break;
+
+    }
+
+    freeaddrinfo(result);
+    return s_fd;
+}
+
+void proxy_clean(proxy_t* p){
+    close(p->listening_fd);
+    client_server_t* cs = p->head;
+    while(cs != NULL){
+        client_server_t* next = cs->next;
+
+        free(cs);
+        cs = next;
+    }
+}
+
+void proxy_read_server(int fd, char** buf, int* size, char** h_buf, int* h_size)
+{
+    /* read in first set of data */
+    int buf_multiplier = 1;
+    char* header_buf = malloc(BUFSIZE*buf_multiplier + 1);
+    int bytes_read = read(fd, header_buf, BUFSIZE);
+    header_buf[bytes_read] = '\0';
+
+    char* eoh = NULL;
+    printf("HERE1");
+
+    while((eoh = strstr(header_buf, "\r\n\r\n")) == NULL) {
+        buf_multiplier++;
+        header_buf = realloc(header_buf, BUFSIZE*buf_multiplier + 1);
+        int more_bytes = read(fd, header_buf + bytes_read, BUFSIZE);
+
+        bytes_read+=more_bytes;
+        header_buf[bytes_read] = '\0';
+    }
+
+    int header_size = (int)(eoh - header_buf)+4;
+    printf("HERE2");
+
+
+    *h_size = header_size;
+    *h_buf = header_buf;
+
+    char* header_copy = malloc(header_size + 1);
+    memcpy(header_copy, header_buf, header_size);
+    header_copy[header_size] = '\0';
+    //printf("Header COPY from server: %s\n", header_copy);
+
+    /* parse header to get data length*/
+    header_elems* h = proxy_parse_header(header_copy);
+    int data_size = atoi(h->data_len); //get data size from parsed header
+    free(h);
+    free(header_copy);
+    int data_read = bytes_read - header_size;
+    char* data_buf = malloc(data_size);
+
+    memcpy(data_buf, eoh+4, data_read);
+    int num_bytes_read = data_read;
+    num_bytes_read += read(fd, data_buf + num_bytes_read, data_size-num_bytes_read);
+    while (num_bytes_read != data_size) {
+        num_bytes_read += read(fd, data_buf + num_bytes_read, data_size-num_bytes_read);
+    }
+    printf("HERE3");
+
+    *buf = data_buf;
+    *size = num_bytes_read;
+
+}
