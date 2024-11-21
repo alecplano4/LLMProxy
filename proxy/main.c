@@ -31,8 +31,8 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    initialize_proxy(listening_port);
-    // run_proxy(listening_port, tunnel_mode);
+    //initialize_proxy_test(listening_port);
+    run_proxy(listening_port, tunnel_mode);
 }
 
 //-------------------------------------------------------------------------------------------------

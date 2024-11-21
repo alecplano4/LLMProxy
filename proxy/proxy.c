@@ -267,12 +267,14 @@ void create_server_certificate(const char *root_cert_file, const char *root_key_
 
 
 
-void initialize_proxy(int listening_port) {
+void initialize_proxy_test(int listening_port) {
 
     const char *root_cert_file = "ca.crt";
     const char *root_key_file = "ca.key";
-    char server_cert_file[HOST_NAME_LENGTH];
-    char server_key_file[HOST_NAME_LENGTH];
+
+    char server_cert_file[HOST_NAME_LENGTH] = {0};
+    char server_key_file[HOST_NAME_LENGTH] = {0};
+
     
     // Declare variables
     int listening_socket_fd;
@@ -361,7 +363,7 @@ void initialize_proxy(int listening_port) {
 
 
 
-proxy_t* intialize_proxy(int listening_port) {
+proxy_t* initialize_proxy(int listening_port) {
     proxy_t* new_proxy = malloc(sizeof(proxy_t));
 
     //new_proxy->client_read = true;
@@ -373,8 +375,11 @@ proxy_t* intialize_proxy(int listening_port) {
 
 
 void run_proxy(int listening_port, bool tunnel_mode) {
-    
-    proxy_t* p = intialize_proxy(listening_port);
+
+    const char *root_cert_file = "ca.crt";
+    const char *root_key_file = "ca.key";
+
+    proxy_t* p = initialize_proxy(listening_port);
     printf("DEBUG: Created Proxy object\n");
 
     fd_set read_fds; 
@@ -405,54 +410,153 @@ void run_proxy(int listening_port, bool tunnel_mode) {
             /* Current implementation does not work concurently 
                 it runs all instructions for a server at once*/
             if (FD_ISSET(p->listening_fd, &read_fds)) {
-                client_server_t* cs = malloc(sizeof(client_server_t));
-                /* Potential client local variables */
+                if(tunnel_mode){
+                    client_server_t* cs = malloc(sizeof(client_server_t));
+                    /* Potential client local variables */
+                    
+                    cs->client_addr_len = sizeof(cs->client_addr);
+
+
+
+                    cs->client_fd = accept(p->listening_fd,
+                                        (struct sockaddr*)&(cs->client_addr),
+                                        &(cs->client_addr_len));
+                    uint8_t buf[10000];
+                    int bytes_read = read(cs->client_fd, buf, 10000);
+                    uint8_t header_copy_for_server[10000];
+                    memcpy(header_copy_for_server, buf, bytes_read);
+                    printf("Header Recieved from client:\n");
+                    printf("%s\n\n", header_copy_for_server);
+
+                    printf("parsing the header:\n");
+                    cs->h = proxy_parse_header((char*)buf);
+
+                    printf("HOST = %s\n\n\n",cs->h->host);
+
+
+                    printf("Connecting to server\n\n");
+                    int server_fd = proxy_connect_server(cs->h);
+                    int l = write(server_fd, header_copy_for_server, bytes_read);
+
+                    bzero(buf, 10000);
+                    int b = read(server_fd, buf, 10000);
+                    printf("recieved messgae from server len = %d:\n", b);
+                    printf("%s\n", buf);
+                    
+                    // int c = read(server_fd, buf+b, 10000-b);
+                    // printf("recieved messgae from server len = %d:\n", b);
+                    // printf("%s\n", buf);
+
+
+                    char* server_resp_buf;
+                    int server_resp_buf_size;
+                    char* server_header;
+                    int server_header_size;
+                    // proxy_read_server(server_fd,
+                    //               &server_resp_buf, &server_resp_buf_size,
+                    //               &server_header, &server_header_size);
+                    //write(client_fd, server_resp_buf, server_resp_buf_size);
+                    printf("relaying data back to client\n");
+                    write(cs->client_fd, buf, b);
+
+                }else{
+                    struct sockaddr_in client_addr;
+                    unsigned int len = sizeof(client_addr);
+                    SSL *ssl;
+
+                    char server_cert_file[HOST_NAME_LENGTH] = {0};
+                    char server_key_file[HOST_NAME_LENGTH] = {0};
+                    SSL_CTX *ctx;
+
+                    int client_socket = accept(p->listening_fd, (struct sockaddr*)&client_addr, &len);
+                    if (client_socket < 0) {
+                        perror("Unable to accept");
+                        exit(EXIT_FAILURE);
+                    }
+                    printf("Client TCP handshake successful\n");
+                    // Receive client data
+                    char request[200];
+                    char hostname[100];
+                    int bytes_received = recv(client_socket, request, sizeof(request)-1, 0);
+                    printf("Bytes received: %d\n", bytes_received);
+                    printf("Message: %s\n", request);
+                    extract_hostname(request, hostname);
+                    printf("Hostname: %s\n", hostname);
+
+                    // Client expects "Connection Established" response to CONNECT request.
+                    // Must be sent for client to initiate SSL handshake
+                    if (strstr(request, "CONNECT") == request) {
+                        // Respond with "HTTP/1.1 200 Connection Established"
+                        const char *response = "HTTP/1.1 200 Connection Established\r\n\r\n";
+                        send(client_socket, response, strlen(response), 0);
+                        printf("Sent response to client:\n%s\n", response);
+
+                        // Create server certificate and save to disk
+                        create_server_certificate(root_cert_file, root_key_file, hostname, server_cert_file, server_key_file);
+                        printf("\n--------------------\nCERTIFICATE CREATED\n--------------------\n\n");
+
+                        // Prepare SSL Context object
+                        ctx = create_context();                                    // Get SSL Context to store TLS configuration parameters
+                        printf("Context created\n");
+                        configure_context(ctx, server_cert_file, server_key_file); // Load certificate and private key into context
+                        printf("Certificate loaded into context\n");
+
+                        // Set client connection to SSL (perform SSL handshake)
+                        ssl = SSL_new(ctx);                // Create SSL object
+                        SSL_set_fd(ssl, client_socket);    // Link SSL object to accepted TCP socket
+                        printf("SSL object created and linked to TCP socket\n");
+
+                        if (SSL_accept(ssl) <= 0) {        // Perform SSL handshake
+                            printf("Unsuccessful client SSL handshake\n");
+                            ERR_print_errors_fp(stderr);
+                        } else {
+                            printf("SSL handshake completed.\n");
+                        }
+                        /* DONE WITH SSL CONNECTION */
+
+                        /* RECIEVE NEXT MESSAGE */
+                        bytes_received = SSL_read(ssl, request, sizeof(request) - 1);
+                        if (bytes_received > 0) {
+                            request[bytes_received] = '\0'; // Null-terminate the received message
+                            printf("Received message from client:\n %s\n\n", request);
+                        } else {
+                            printf("SSL_read failed");
+                            exit(EXIT_FAILURE);
+                        }
+                        /* receive a message from the client*/
+                        printf("FORWARDING MESSAGE TO SERVER");
+                        SSL_CTX* server_ctx = SSL_CTX_new(TLS_client_method());
+                        int sockfd = open_connection(hostname, 443);
+                        if (sockfd < 0) {
+                            fprintf(stderr, "Unable to connect to server\n");
+                            exit(EXIT_FAILURE);
+                        }
+                        SSL* ssl_server = create_ssl_connection(server_ctx, sockfd);
+
+                        if (SSL_write(ssl_server, request, bytes_received) <= 0) {
+                            printf("ERROR with ssl_write\n");
+                            exit(EXIT_FAILURE);
+                        }
+
+                        char server_response[10000];
+                        int bytes;
+
+                        bytes = SSL_read(ssl_server, server_response, sizeof(server_response) - 1);
+
+                        if (SSL_write(ssl, server_response, bytes) <= 0) {
+                            printf("ERROR with ssl_write\n");
+                            exit(EXIT_FAILURE);
+                        }
+
+
+                        // Close SSL connection and free data structure
+                        SSL_shutdown(ssl);
+                        SSL_free(ssl);
+                    } else {
+                        fprintf(stderr, "Invalid request: Not a CONNECT request\n");
+                    }
+                }
                 
-                cs->client_addr_len = sizeof(cs->client_addr);
-
-
-
-                cs->client_fd = accept(p->listening_fd,
-                                       (struct sockaddr*)&(cs->client_addr),
-                                       &(cs->client_addr_len));
-                uint8_t buf[10000];
-                int bytes_read = read(cs->client_fd, buf, 10000);
-                uint8_t header_copy_for_server[10000];
-                memcpy(header_copy_for_server, buf, bytes_read);
-                printf("Header Recieved from client:\n");
-                printf("%s\n\n", header_copy_for_server);
-
-                printf("parsing the header:\n");
-                cs->h = proxy_parse_header((char*)buf);
-
-                printf("HOST = %s\n\n\n",cs->h->host);
-
-
-                printf("Connecting to server\n\n");
-                int server_fd = proxy_connect_server(cs->h);
-                int l = write(server_fd, header_copy_for_server, bytes_read);
-
-                bzero(buf, 10000);
-                int b = read(server_fd, buf, 10000);
-                printf("recieved messgae from server len = %d:\n", b);
-                printf("%s\n", buf);
-                
-                // int c = read(server_fd, buf+b, 10000-b);
-                // printf("recieved messgae from server len = %d:\n", b);
-                // printf("%s\n", buf);
-
-
-                char* server_resp_buf;
-                int server_resp_buf_size;
-                char* server_header;
-                int server_header_size;
-                // proxy_read_server(server_fd,
-                //               &server_resp_buf, &server_resp_buf_size,
-                //               &server_header, &server_header_size);
-                //write(client_fd, server_resp_buf, server_resp_buf_size);
-                printf("relaying data back to client\n");
-                write(cs->client_fd, buf, b);
-
 
             }else{
                 //for all fds in the list add call relay
@@ -626,4 +730,53 @@ void proxy_read_server(int fd, char** buf, int* size, char** h_buf, int* h_size)
     *buf = data_buf;
     *size = num_bytes_read;
 
+}
+
+
+
+SSL *create_ssl_connection(SSL_CTX *ctx, int sockfd) {
+    SSL *ssl = SSL_new(ctx);
+    if (!ssl) {
+        printf("FAILEING\n");
+        ERR_print_errors_fp(stderr);
+        abort();
+    }
+    SSL_set_fd(ssl, sockfd);
+    if (SSL_connect(ssl) <= 0) {
+        printf("FAILEING2\n");
+
+        ERR_print_errors_fp(stderr);
+        abort();
+    }
+    return ssl;
+}
+
+int open_connection(const char *hostname, int port) {
+    struct hostent *host;
+    struct sockaddr_in addr;
+    int sockfd;
+
+    host = gethostbyname(hostname);
+    if (!host) {
+        fprintf(stderr, "Could not resolve hostname\n");
+        return -1;
+    }
+
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        perror("Unable to create socket");
+        return -1;
+    }
+
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    memcpy(&addr.sin_addr.s_addr, host->h_addr, host->h_length);
+
+    if (connect(sockfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        perror("Unable to connect");
+        close(sockfd);
+        return -1;
+    }
+
+    return sockfd;
 }
