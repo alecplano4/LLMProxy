@@ -264,59 +264,6 @@ void create_server_certificate(const char *root_cert_file, const char *root_key_
 
     printf("Server certificate and private key generated and signed successfully.\n");
 
-    // // Create x509 structure to represent server certificate
-    // X509 * x509;
-    // x509 = X509_new();
-
-    // // Set certificate serial number to 1 (some HTTP servers refuse certificates with serial number 0)
-    // ASN1_INTEGER_set(X509_get_serialNumber(x509), 1);
-    
-    // // Set lifetime of certificate to 1 year
-    // X509_gmtime_adj(X509_get_notBefore(x509), 0);
-    // X509_gmtime_adj(X509_get_notAfter(x509), 31536000L);
-
-    // // Set certificate's public key to previously generated public key
-    // X509_set_pubkey(x509, pkey);
-
-    // // Get subject name to be used in self-signing the certificate
-    // // (the name of the issuer is the same as the name of the subject)
-    // X509_NAME * name;
-    // name = X509_get_subject_name(x509);
-
-    // // Provide country code ("C"), organization ("O") and common name ("CN")
-    // X509_NAME_add_entry_by_txt(name, "C",  MBSTRING_ASC,
-    //                         (unsigned char *)"US", -1, -1, 0);
-    // X509_NAME_add_entry_by_txt(name, "O",  MBSTRING_ASC,
-    //                         (unsigned char *)"Plano&Rolfe Inc.", -1, -1, 0);
-    // X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC,
-    //                         (unsigned char *)"localhost", -1, -1, 0);
-
-    // // Set the issuer name
-    // X509_set_issuer_name(x509, name);
-
-    // // Sign the certificate
-    // X509_sign(x509, pkey, EVP_sha1());
-
-    // // Write private key to disk as .pem file
-    // FILE * f;
-    // f = fopen("server_key.pem", "wb");
-    // PEM_write_PrivateKey(
-    //     f,                  /* write the key to the file we've opened */
-    //     pkey,               /* use key from earlier */
-    //     EVP_des_ede3_cbc(), /* default cipher for encrypting the key on disk */
-    //     "replace_me",       /* passphrase required for decrypting the key on disk */
-    //     10,                 /* length of the passphrase string */
-    //     NULL,               /* callback for requesting a password */
-    //     NULL                /* data to pass to the callback */
-    // );
-
-    // // Write certificate to disk as .pem file
-    // // FILE * f;
-    // f = fopen("server_cert.pem", "wb");
-    // PEM_write_X509(
-    //     f,   /* write the certificate to the file we've opened */
-    //     x509 /* our certificate */
-    // );
 }
 
 
@@ -438,9 +385,6 @@ void run_proxy(int listening_port, bool tunnel_mode) {
     FD_ZERO(&read_fds);
 
     while(1) {
-        /* Potential client local variables */
-        struct sockaddr_in client_addr;
-        unsigned int sockaddr_len = sizeof(client_addr);
 
         //TODO: create a set_fds function that loops through linked list and adds fds to sets
 
@@ -465,24 +409,31 @@ void run_proxy(int listening_port, bool tunnel_mode) {
             /* Current implementation does not work concurently 
                 it runs all instructions for a server at once*/
             if (FD_ISSET(p->listening_fd, &read_fds)) {
-                int client_fd = accept(p->listening_fd,
-                                       (struct sockaddr*)&(client_addr),
-                                       &sockaddr_len);
+                client_server_t* cs = malloc(sizeof(client_server_t));
+                /* Potential client local variables */
+                
+                cs->client_addr_len = sizeof(cs->client_addr);
+
+
+
+                cs->client_fd = accept(p->listening_fd,
+                                       (struct sockaddr*)&(cs->client_addr),
+                                       &(cs->client_addr_len));
                 uint8_t buf[10000];
-                int bytes_read = read(client_fd, buf, 10000);
+                int bytes_read = read(cs->client_fd, buf, 10000);
                 uint8_t header_copy_for_server[10000];
                 memcpy(header_copy_for_server, buf, bytes_read);
                 printf("Header Recieved from client:\n");
                 printf("%s\n\n", header_copy_for_server);
 
                 printf("parsing the header:\n");
-                header_elems* h = proxy_parse_header((char*)buf);
+                cs->h = proxy_parse_header((char*)buf);
 
-                printf("HOST = %s\n\n\n",h->host);
+                printf("HOST = %s\n\n\n",cs->h->host);
 
 
                 printf("Connecting to server\n\n");
-                int server_fd = proxy_connect_server(h);
+                int server_fd = proxy_connect_server(cs->h);
                 int l = write(server_fd, header_copy_for_server, bytes_read);
 
                 bzero(buf, 10000);
@@ -504,7 +455,7 @@ void run_proxy(int listening_port, bool tunnel_mode) {
                 //               &server_header, &server_header_size);
                 //write(client_fd, server_resp_buf, server_resp_buf_size);
                 printf("relaying data back to client\n");
-                write(client_fd, buf, b);
+                write(cs->client_fd, buf, b);
 
 
             }else{
