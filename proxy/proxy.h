@@ -60,7 +60,7 @@ typedef struct proxy {
 proxy_t* initialize_proxy(int listening_port);
 void proxy_clean(proxy_t* p);
 
-void run_proxy(int listening_port, bool tunnel_mode);
+// void run_proxy(int listening_port, bool tunnel_mode);
 
 header_elems* proxy_parse_header(char* header);
 void proxy_read_server(int fd, char** buf, int* size, char** h_buf, int* h_size);
