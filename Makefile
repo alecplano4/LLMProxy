@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Ishared
+CFLAGS = -Wall -Ishared -O2
 
 #LDFLAGS = -lssl -lcrypto
 

@@ -32,6 +32,7 @@
 // ----GLOBAL VARIABLES----------------------------------------------------------------------------
 #define MAX_CLIENT_CONNECTIONS 10
 #define HOST_NAME_LENGTH 100
+#define BUFSIZE 1000
 
 X509 *create_signed_cert(SSL_CTX *root_ctx, const char *common_name);
 
@@ -431,17 +432,18 @@ void run_proxy(int listening_port, bool tunnel_mode) {
                     printf("parsing the header:\n");
                     cs->h = proxy_parse_header((char*)buf);
 
-                    printf("HOST = %s\n\n\n",cs->h->host);
+                    print_header_elems(cs->h);
 
 
                     printf("Connecting to server\n\n");
                     int server_fd = proxy_connect_server(cs->h);
+                    printf("HEADER COPY FOR SERVER:%s---", header_copy_for_server);
                     int l = write(server_fd, header_copy_for_server, bytes_read);
 
-                    bzero(buf, 10000);
-                    int b = read(server_fd, buf, 10000);
-                    printf("recieved messgae from server len = %d:\n", b);
-                    printf("%s\n", buf);
+                    // bzero(buf, 10000);
+                    // int b = read(server_fd, buf, 10000);
+                    // printf("recieved messgae from server len = %d:\n", b);
+                    // printf("%s\n", buf);
                     
                     // int c = read(server_fd, buf+b, 10000-b);
                     // printf("recieved messgae from server len = %d:\n", b);
@@ -452,12 +454,15 @@ void run_proxy(int listening_port, bool tunnel_mode) {
                     int server_resp_buf_size;
                     char* server_header;
                     int server_header_size;
-                    // proxy_read_server(server_fd,
+                    // proxy_read_server(NULL, server_fd,
                     //               &server_resp_buf, &server_resp_buf_size,
-                    //               &server_header, &server_header_size);
-                    //write(client_fd, server_resp_buf, server_resp_buf_size);
-                    printf("relaying data back to client\n");
-                    write(cs->client_fd, buf, b);
+                    //               &server_header, &server_header_size, true);
+                    proxy_read_server(server_fd, &server_resp_buf, &server_resp_buf_size, &server_header, &server_header_size);
+                    printf("\nSERVER RESPONSE BUF \n%s", server_resp_buf);
+                    write(cs->client_fd, server_resp_buf, server_resp_buf_size);
+                    // printf("relaying data back to client\n");
+                    // write(cs->client_fd, buf, b);
+                    
 
                 }else{
                     struct sockaddr_in client_addr;
@@ -523,6 +528,14 @@ void run_proxy(int listening_port, bool tunnel_mode) {
                             printf("SSL_read failed");
                             exit(EXIT_FAILURE);
                         }
+
+                        char request_copy[10000];
+                        memcpy(request_copy, request, bytes_received);
+                        header_elems* header = proxy_parse_header(request_copy);
+                        print_header_elems(header);
+                        printf("---------------\n");
+
+
                         /* receive a message from the client*/
                         printf("FORWARDING MESSAGE TO SERVER");
                         SSL_CTX* server_ctx = SSL_CTX_new(TLS_client_method());
@@ -538,15 +551,25 @@ void run_proxy(int listening_port, bool tunnel_mode) {
                             exit(EXIT_FAILURE);
                         }
 
-                        char server_response[10000];
-                        int bytes;
+                        char* server_data;
+                        int server_data_size;
+                        char* server_header;
+                        int server_header_size;
+                        // proxy_read_server(ssl_server, 0, &server_data, 
+                        //                 &server_data_size, &server_header, 
+                        //                 &server_header_size, false);
 
-                        bytes = SSL_read(ssl_server, server_response, sizeof(server_response) - 1);
+                        printf("SERVER HEADER:\n");
+                        printf("%.*s", server_header_size, server_header);
 
-                        if (SSL_write(ssl, server_response, bytes) <= 0) {
-                            printf("ERROR with ssl_write\n");
-                            exit(EXIT_FAILURE);
-                        }
+                        // int bytes;
+
+                        // bytes = SSL_read(ssl_server, server_response, sizeof(server_response) - 1);
+
+                        // if (SSL_write(ssl, server_response, bytes) <= 0) {
+                        //     printf("ERROR with ssl_write\n");
+                        //     exit(EXIT_FAILURE);
+                        // }
 
 
                         // Close SSL connection and free data structure
@@ -567,6 +590,71 @@ void run_proxy(int listening_port, bool tunnel_mode) {
 }
 
 
+// header_elems* proxy_parse_header(char* header)
+// {
+//     header_elems* h = (header_elems*)calloc(1,sizeof(header_elems));
+
+//     char* nl_delim = "\n";
+//     char* cr_delim = "\r";
+//     char* space_delim = " ";
+//     char* col_delim = ":";
+
+//     h->max_age = NULL;
+
+//     char* command = strtok(header, space_delim);
+
+//     /* while there are commands */
+//     while(command != NULL){
+//         if(strcmp(command, "GET") == 0 || strcmp(command, "HEAD") == 0) {
+//             h->url = strtok(NULL, space_delim);
+//             printf("URL = %s\n", h->url);
+//             char* http_v = strtok(NULL, cr_delim);
+//             printf("HTTP_v = %s\n", http_v);
+
+//         }else if(strcmp(command, "\nHost") == 0) {
+
+//             h->host = strtok(NULL, cr_delim);
+//             h->host++;
+//             if(strstr(h->host, ":") == NULL){
+//                 h->port = "80";
+//             }else{
+//                 char* host_port_delim = (strstr(h->host, ":"));
+//                 *host_port_delim = '\0';
+//                 h->port = host_port_delim+1;
+//             }
+//             printf("HOST = %s\n", h->host);
+//             printf("PORT = %s\n", h->port);
+//         }else if(strcmp(command, "\nAccept") == 0) {
+//             char* a = strtok(NULL, cr_delim);
+
+//         }else if(strcmp(command, "\nProxy-Connection") == 0) {
+//             char* keep_alive = strtok(NULL, cr_delim);
+//             printf("BREKIGN while\n");
+//             break;
+//         }else if(strcmp(command, "\nContent-Length") == 0) {
+//             char* len = strtok(NULL, cr_delim);
+//             len++;
+//             h->data_len = len;
+
+//         }else if(strcmp(command, "\nCache-Control") == 0) {
+//             strtok(NULL, "=");
+//             //Cache-Control: max-age=N
+//             char* max_age = strtok(NULL, cr_delim);
+//             h->max_age = max_age;
+
+//         }else{
+//             strtok(NULL, cr_delim);
+//         }
+
+//         /* get the next command */
+//         command = strtok(NULL, col_delim);
+
+//     }
+//     printf("RETURNING\n");
+
+//     return h;
+// }
+
 header_elems* proxy_parse_header(char* header)
 {
     header_elems* h = (header_elems*)calloc(1,sizeof(header_elems));
@@ -575,59 +663,49 @@ header_elems* proxy_parse_header(char* header)
     char* cr_delim = "\r";
     char* space_delim = " ";
     char* col_delim = ":";
+    
+    char* last;
+    char* line = strtok_r(header, nl_delim, &last);
+    printf("%s", line);
+    while(strcmp(line, "\r") != 0){
+        //printf("%s\n", line);
+        char* inner_last;
+        char* command = strtok_r(line, space_delim, &inner_last);
 
-    h->max_age = NULL;
-
-    char* command = strtok(header, space_delim);
-
-    /* while there are commands */
-    while(command != NULL){
         if(strcmp(command, "GET") == 0 || strcmp(command, "HEAD") == 0) {
-            h->url = strtok(NULL, space_delim);
-            printf("URL = %s\n", h->url);
-            char* http_v = strtok(NULL, cr_delim);
-            printf("HTTP_v = %s\n", http_v);
+            h->url = strtok_r(NULL, space_delim, &inner_last);
+            char* http_v = strtok_r(NULL, cr_delim,&inner_last);
+            //printf("HTTP_v = %s\n", http_v);
 
-        }else if(strcmp(command, "\nHost") == 0) {
-
-            h->host = strtok(NULL, cr_delim);
-            h->host++;
+        }else if(strcmp(command, "Host:") == 0) {
+            //printf("\n\nLINE: %s\n\n", command+6);
+            h->host = strtok_r(NULL, cr_delim, &inner_last);
             if(strstr(h->host, ":") == NULL){
-                h->port = "80";
+                h->port = "443";
             }else{
                 char* host_port_delim = (strstr(h->host, ":"));
                 *host_port_delim = '\0';
                 h->port = host_port_delim+1;
+                
             }
-            printf("HOST = %s\n", h->host);
-            printf("PORT = %s\n", h->port);
-        }else if(strcmp(command, "\nAccept") == 0) {
-            char* a = strtok(NULL, cr_delim);
+            //printf("HOST = %s\n", h->host);
+            //printf("host len = %d\n",strlen(h->host));
+            //printf("PORT = %s\n", h->port);
 
-        }else if(strcmp(command, "\nProxy-Connection") == 0) {
-            char* keep_alive = strtok(NULL, cr_delim);
-            printf("BREKIGN while\n");
-            break;
-        }else if(strcmp(command, "\nContent-Length") == 0) {
-            char* len = strtok(NULL, cr_delim);
-            len++;
+        }else if(strcmp(command, "Content-Length:") == 0) {
+            char* len = strtok_r(NULL, cr_delim, &inner_last);
             h->data_len = len;
 
-        }else if(strcmp(command, "\nCache-Control") == 0) {
-            strtok(NULL, "=");
+        }else if(strcmp(command, "Cache-Control:") == 0) {
+            char* eq = "=";
+            strtok_r(NULL, eq, &inner_last);
             //Cache-Control: max-age=N
             char* max_age = strtok(NULL, cr_delim);
             h->max_age = max_age;
 
-        }else{
-            strtok(NULL, cr_delim);
         }
-
-        /* get the next command */
-        command = strtok(NULL, col_delim);
-
+        line = strtok_r(NULL, "\n", &last);
     }
-    printf("RETURNING\n");
 
     return h;
 }
@@ -679,6 +757,97 @@ void proxy_clean(proxy_t* p){
     }
 }
 
+// void proxy_read_server(SSL* ssl, int fd, char** buf, int* size, char** h_buf, int* h_size, bool tunnel_mode)
+// {
+//     printf("HERHE\n");
+//     /* read in first set of data */
+//     int buf_multiplier = 1;
+//     char* header_buf = malloc(BUFSIZE*buf_multiplier + 1);
+//     printf("header buf = %p\n", header_buf);
+//     int bytes_read;
+//     if (tunnel_mode){
+//             printf("HERHE\n");
+
+//         bytes_read = read(fd, header_buf, BUFSIZE);
+//         printf("bytes read == %d", bytes_read);
+//     }else{
+//             printf("Hsadf\n");
+
+//         bytes_read = SSL_read(ssl, header_buf, BUFSIZE);
+//     }
+//     printf("HERHE\n");
+
+//     //header_buf[bytes_read] = '\0';
+//     //printf("%s\n", header_buf);
+
+//     printf("HERE1");
+
+//     char* eoh = NULL;
+//     printf("HERE1");
+
+    
+    
+    
+//     //  while((eoh = strstr(header_buf, "\r\n\r\n")) == NULL) {
+//     //     buf_multiplier++;
+//     //     header_buf = realloc(header_buf, BUFSIZE*buf_multiplier + 1);
+
+//     //     int more_bytes;
+//     //     if (tunnel_mode){
+//     //         more_bytes = read(fd, header_buf + bytes_read, BUFSIZE);
+//     //     }else{
+//     //         more_bytes = SSL_read(ssl, header_buf + bytes_read, BUFSIZE);
+//     //     }
+
+//     //     bytes_read+=more_bytes;
+//     //     header_buf[bytes_read] = '\0';
+//     // }
+
+//     // int header_size = (int)(eoh - header_buf)+4;
+//     // printf("HERE2");
+
+
+//     // *h_size = header_size;
+//     // *h_buf = header_buf;
+
+//     // char* header_copy = malloc(header_size + 1);
+//     // memcpy(header_copy, header_buf, header_size);
+//     // header_copy[header_size] = '\0';
+//     // //printf("Header COPY from server: %s\n", header_copy);
+
+//     // /* parse header to get data length*/
+//     // header_elems* h = proxy_parse_header(header_copy);
+//     // int data_size = atoi(h->data_len); //get data size from parsed header
+//     // free(h);
+//     // free(header_copy);
+//     // int data_read = bytes_read - header_size;
+//     // char* data_buf = malloc(data_size);
+
+//     // memcpy(data_buf, eoh+4, data_read);
+//     // int num_bytes_read = data_read;
+
+//     // if (tunnel_mode){
+//     //     num_bytes_read += read(fd, data_buf + num_bytes_read, data_size-num_bytes_read);
+
+//     // }else{
+//     //     num_bytes_read += SSL_read(ssl, data_buf + num_bytes_read, data_size-num_bytes_read);
+//     // }
+
+//     // while (num_bytes_read != data_size) {
+//     //     if (tunnel_mode){
+//     //         num_bytes_read += read(fd, data_buf + num_bytes_read, data_size-num_bytes_read);
+
+//     //     }else{
+//     //         num_bytes_read += SSL_read(ssl, data_buf + num_bytes_read, data_size-num_bytes_read);
+//     //     }
+//     // }
+//     // printf("HERE3");
+
+//     // *buf = data_buf;
+//     // *size = num_bytes_read;
+
+// }
+
 void proxy_read_server(int fd, char** buf, int* size, char** h_buf, int* h_size)
 {
     /* read in first set of data */
@@ -686,49 +855,61 @@ void proxy_read_server(int fd, char** buf, int* size, char** h_buf, int* h_size)
     char* header_buf = malloc(BUFSIZE*buf_multiplier + 1);
     int bytes_read = read(fd, header_buf, BUFSIZE);
     header_buf[bytes_read] = '\0';
+    // char* eoh = NULL;
+    printf("%.*s\n",bytes_read,header_buf);
+    // while((eoh = strstr(header_buf, "\r\n\r\n")) == NULL) {
+    // printf("%.*s\n",bytes_read,header_buf);
 
-    char* eoh = NULL;
-    printf("HERE1");
+    //     buf_multiplier++;
 
-    while((eoh = strstr(header_buf, "\r\n\r\n")) == NULL) {
-        buf_multiplier++;
-        header_buf = realloc(header_buf, BUFSIZE*buf_multiplier + 1);
-        int more_bytes = read(fd, header_buf + bytes_read, BUFSIZE);
+    //     header_buf = realloc(header_buf, BUFSIZE*buf_multiplier + 1);
 
-        bytes_read+=more_bytes;
-        header_buf[bytes_read] = '\0';
-    }
+    //     int more_bytes = read(fd, header_buf + bytes_read, BUFSIZE);
+    //     if(more_bytes == 0){
+    //         printf("read n");
+    //         break;
+    //     }
 
-    int header_size = (int)(eoh - header_buf)+4;
-    printf("HERE2");
+    //     bytes_read+=more_bytes;
+    //     printf("%d\n",bytes_read);
+    //     header_buf[bytes_read] = '\0';
+
+    // }
+    // printf("here");
+
+    // int header_size = (int)(eoh - header_buf)+4;
 
 
-    *h_size = header_size;
+    *h_size = bytes_read;//header_size;
+    // printf("sadf");
     *h_buf = header_buf;
 
-    char* header_copy = malloc(header_size + 1);
-    memcpy(header_copy, header_buf, header_size);
-    header_copy[header_size] = '\0';
-    //printf("Header COPY from server: %s\n", header_copy);
+    // char* header_copy = malloc(header_size + 1);
+    // memcpy(header_copy, header_buf, header_size);
+    // header_copy[header_size] = '\0';
+    // printf("\n\n\n\nHeader COPY from server: %s\n", header_copy);
 
-    /* parse header to get data length*/
-    header_elems* h = proxy_parse_header(header_copy);
-    int data_size = atoi(h->data_len); //get data size from parsed header
-    free(h);
-    free(header_copy);
-    int data_read = bytes_read - header_size;
-    char* data_buf = malloc(data_size);
+    // /* parse header to get data length*/
+    // header_elems* h = proxy_parse_header(header_copy);
+    // print_header_elems(h);
+    // int data_size = atoi(h->data_len); //get data size from parsed header
+    // free(h);
+    // free(header_copy);
+    // int data_read = bytes_read - header_size;
+    // char* data_buf = malloc(data_size);
 
-    memcpy(data_buf, eoh+4, data_read);
-    int num_bytes_read = data_read;
-    num_bytes_read += read(fd, data_buf + num_bytes_read, data_size-num_bytes_read);
-    while (num_bytes_read != data_size) {
-        num_bytes_read += read(fd, data_buf + num_bytes_read, data_size-num_bytes_read);
-    }
-    printf("HERE3");
+    // memcpy(data_buf, eoh+4, data_read);
+    // int num_bytes_read = data_read;
+    // num_bytes_read += read(fd, data_buf + num_bytes_read, data_size-num_bytes_read);
+    // printf("SERVER DATA (data size: %d): %.*s",num_bytes_read,num_bytes_read,data_buf);
+    // while (num_bytes_read != data_size) {
+    //     num_bytes_read += read(fd, data_buf + num_bytes_read, data_size-num_bytes_read);
+    //     printf("SERVER DATA: %.*s",num_bytes_read,data_buf);
 
-    *buf = data_buf;
-    *size = num_bytes_read;
+    // }
+    // printf("hereasdf\n");
+    // *buf = data_buf;
+    // *size = num_bytes_read;
 
 }
 
@@ -779,4 +960,15 @@ int open_connection(const char *hostname, int port) {
     }
 
     return sockfd;
+}
+
+void print_header_elems(header_elems* h)
+{
+    printf("Printing header:\n");
+    printf("URL: %s\n", h->url);
+    printf("Host: %s\n", h->host);
+    printf("Port: %s\n", h->port);
+    printf("Max Age: %s\n", h->max_age);
+    printf("Data Len: %s\n", h->data_len);
+
 }

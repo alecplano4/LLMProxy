@@ -63,9 +63,10 @@ void proxy_clean(proxy_t* p);
 void run_proxy(int listening_port, bool tunnel_mode);
 
 header_elems* proxy_parse_header(char* header);
-void proxy_read_server(int fd, char** buf, int* size, char** h_buf, int* h_size);
+//void proxy_read_server(SSL* ssl, int fd, char** buf, int* size, char** h_buf, int* h_size, bool tunnel_mode);
 int proxy_connect_server(header_elems* header);
 
+void proxy_read_server(int fd, char** buf, int* size, char** h_buf, int* h_size);
 
 
 int create_socket(int port, struct sockaddr_in* server_addr);
@@ -79,6 +80,8 @@ void ssl_init(SSL_CTX** ctx, const char *certfile, const char *keyfile);
 
 SSL *create_ssl_connection(SSL_CTX *ctx, int sockfd);
 int open_connection(const char *hostname, int port);
+
+void print_header_elems(header_elems* h);
 
 
 
