@@ -186,59 +186,51 @@ void create_server_certificate(const char* root_cert_file, const char* root_key_
                                char* hostname, char* server_cert_file, char* server_key_file, 
                                const char* serial_number_file) {
 
+    printf("Certificate Commands:\n");
     /*---1. CREATE SERVER SUBJECT -------------------------------------------*/
-    // Format: /C=<country>/ST=<state>/L=<locality>/O=<organization>/OU=<organization-unit>/CN=<common-name>/emailAddress=<email>
+    // Curl relies on the Common Name (CN) in the subject field for domain validation.
+    // Browsers rely on the SAN field for domain validation
     char subject[500];
     snprintf(subject, sizeof(subject), 
              "/C=US/ST=MA/L=Boston/O=Tufts/OU=GSE/CN=%s/emailAddress=it@example.com", 
              hostname);
-    printf("Subject: %s\n", subject);
+    // printf("Subject: %s\n", subject);
 
 
     /*---2. CREATE PRIVATE KEY ----------------------------------------------*/
     // Create private key for server certificate    
-    char command_private_key[500];
-    snprintf(command_private_key, sizeof(command_private_key), 
-             "openssl genpkey -algorithm rsa -pkeyopt rsa_keygen_bits:2048 -out certificates/%s_key.pem", hostname);
-    printf("Private_Key Command: %s\n", command_private_key);
-    system(command_private_key);
+    char cmd_create_private_key[500];
+    snprintf(cmd_create_private_key, sizeof(cmd_create_private_key), 
+             "openssl genpkey -algorithm rsa -pkeyopt rsa_keygen_bits:2048 -out certificates/%s_key.pem > /dev/null 2>&1", hostname);
+    printf("Private_Key Command: %s\n", cmd_create_private_key);
+    system(cmd_create_private_key);
     snprintf(server_key_file, HOST_NAME_LENGTH, "certificates/%s_key.pem", hostname);
 
     /*---3. CREATE CERTIFICATE SIGNING REQUEST (CSR) ------------------------*/
-    // Format: openssl req -new -key <key> -out <csr> -subj <subject>
-    remove("openssl_custom.cnf");
-    system("cp /etc/ssl/openssl.cnf openssl_custom.cnf");
-    char command_cnf_modify[400];
-    snprintf(command_cnf_modify, sizeof(command_cnf_modify), "echo \"\n[ v3_req ]\nkeyUsage = critical, digitalSignature, keyEncipherment\nextendedKeyUsage = serverAuth\nsubjectAltName = DNS:%s\" >> openssl_custom.cnf", hostname);
-    printf("Echo command: %s\n", command_cnf_modify);
-    system(command_cnf_modify);
+    // The Certificate Signing Request relies on the OpenSSL configuration file. However, the default config file doesn't
+    // include certificate parameters required by browsers, such as the Subject Alternate Name (SAN) (which needs to be
+    // determined dynamically based on the requested host name), or the keyUsage field. To incorporate these, a custom openssl 
+    // config file is created, which includes the default elements as well as the added elements. The custom config file is 
+    // then referenced in the CSR creation command by the -config field.
 
-    char command_csr[500];
-    // snprintf(command_csr, sizeof(command_csr), 
-    //          "openssl req -new -key certificates/%s_key.pem -out certificates/%s_csr.pem -subj %s -addext \"subjectAltName=DNS:%s\"", hostname, hostname, subject, hostname);
-   snprintf(command_csr, sizeof(command_csr), 
+    // 3.1: Create custom configuration file
+    remove("openssl_custom.cnf");                            // Remove custom config file from prior CSR
+    system("cp /etc/ssl/openssl.cnf openssl_custom.cnf");    // Copy default config file
+    char cmd_create_custom_config_file[400];
+    snprintf(cmd_create_custom_config_file, sizeof(cmd_create_custom_config_file), // Add needed fields to custom config file
+             "echo \"\n[ v3_req ]\nbasicConstraints = CA:false\nkeyUsage = critical, digitalSignature, keyEncipherment\nextendedKeyUsage = serverAuth\nsubjectAltName = DNS:%s\" >> openssl_custom.cnf", 
+             hostname);
+    system(cmd_create_custom_config_file);
+
+    // 3.2: Create Certificate Signing Request using custom config file  
+    char cmd_create_CSR[500];
+    snprintf(cmd_create_CSR, sizeof(cmd_create_CSR), 
              "openssl req -new -key certificates/%s_key.pem -out certificates/%s_csr.pem -subj %s -config openssl_custom.cnf", hostname, hostname, subject);
-    printf("Create CSR: %s\n", command_csr);
-    system(command_csr);
+    printf("Create CSR: %s\n", cmd_create_CSR);
+    system(cmd_create_CSR);
 
     /*---4. SIGN CSR WITH CERTIFICATE AUTHORITY ----------------------------*/
-    // FORMAT: openssl x509 -req -days <days> -extfile /etc/ssl/openssl.cnf -extensions usr_cert -CAcreateserial -CA <ca-cert> -CAkey <ca-key> -in <csr> -out <cert>
-    // FORMAT: openssl x509 -req -days 365 -in server.csr -CA root.crt -CAkey root.key -CAcreateserial -out server.crt -extensions v3_req -extfile <(printf "\n[v3_req]\nsubjectAltName=DNS:example.com,DNS:www.example.com")
-    // Create custom openssl_ext.cnf file for use in setting SAN fields
-    // Open the file for writing
-    
     char command_sign_CSR[500];
-    // snprintf(command_sign_CSR, sizeof(command_sign_CSR), 
-    //          "openssl x509 -req -days 365 -extfile /etc/ssl/openssl.cnf -extensions usr_cert -CAcreateserial -CA %s -CAkey %s -in certificates/%s_csr.pem -out certificates/%s_cert.pem", 
-    //          root_cert_file, root_key_file, hostname, hostname);
-    // system("touch openssl_ext.cnf");
-    // char echo_command[200];
-    // snprintf(echo_command, sizeof(echo_command), "echo \"\n[v3_req]\nsubjectAltName=DNS:%s\" > openssl_ext.cnf", hostname);
-    // printf("Echo command: %s\n", echo_command);
-    // system(echo_command);
-    // snprintf(command_sign_CSR, sizeof(command_sign_CSR), 
-    //          "openssl x509 -req -days 365 -in certificates/%s_csr.pem -CA %s -CAkey %s -CAcreateserial -out certificates/%s_cert.pem -extfile openssl_custom.cnf -extensions v3_req,", 
-    //          hostname, root_cert_file, root_key_file, hostname);
     snprintf(command_sign_CSR, sizeof(command_sign_CSR), 
              "openssl x509 -req -days 365 -in certificates/%s_csr.pem -CA %s -CAkey %s -CAcreateserial -out certificates/%s_cert.pem -extfile openssl_custom.cnf -extensions v3_req", 
              hostname, root_cert_file, root_key_file, hostname);
@@ -451,7 +443,7 @@ void initialize_proxy_test(int listening_port) {
         char hostname[100];
         int bytes_received = recv(client_socket, request, sizeof(request)-1, 0);
         printf("Bytes received: %d\n", bytes_received);
-        printf("Message: %s", request);
+        printf("\nMessage: \n%s", request);
         extract_hostname(request, hostname);
         printf("Hostname: %s\n", hostname);
 
@@ -461,7 +453,7 @@ void initialize_proxy_test(int listening_port) {
             // Respond with "HTTP/1.1 200 Connection Established"
             const char *response = "HTTP/1.1 200 Connection Established\r\n\r\n";
             send(client_socket, response, strlen(response), 0);
-            printf("Sent response to client:\n%s\n", response);
+            printf("Sent response to client: %s\n", response);
 
             // Create server certificate and save to disk
             create_server_certificate(root_cert_file, root_key_file, hostname, server_cert_file, 
@@ -473,7 +465,6 @@ void initialize_proxy_test(int listening_port) {
 
             // Prepare SSL Context object
             ctx = create_context();                                    // Get SSL Context to store TLS configuration parameters
-            printf("Context created\n");
             configure_context(ctx, server_cert_file, server_key_file); // Load certificate and private key into context
             printf("Certificate loaded into context\n");
 
@@ -493,7 +484,7 @@ void initialize_proxy_test(int listening_port) {
             bytes_received = SSL_read(ssl, request, sizeof(request) - 1);
             if (bytes_received > 0) {
                 request[bytes_received] = '\0'; // Null-terminate the received message
-                printf("Received message from client: %s\n", request);
+                printf("\nReceived message from client: \n%s\n", request);
             } else {
                 printf("SSL_read failed");
                 exit(EXIT_FAILURE);
