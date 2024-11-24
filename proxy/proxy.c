@@ -145,137 +145,394 @@ void extract_hostname(const char *request, char *hostname) {
 }
 
 
-void create_server_certificate(const char *root_cert_file, const char *root_key_file, char* hostname, char* server_cert_file, char* server_key_file) {
+// void create_server_certificate(const char *root_cert_file, const char *root_key_file, char* hostname, char* server_cert_file, char* server_key_file) {
     
-    EVP_PKEY *root_key = NULL;
-    X509 *root_cert = NULL;
-    X509_REQ *csr = NULL;
-    X509 *server_cert = NULL;
+//     EVP_PKEY *root_key = NULL;
+//     X509 *root_cert = NULL;
+//     X509_REQ *csr = NULL;
+//     X509 *server_cert = NULL;
 
-    /*---LOAD ROOT CERTIFICATE-----------------------------------------------*/
+//     /*---LOAD ROOT CERTIFICATE-----------------------------------------------*/
 
-    // Load root certificate
-    FILE *fp = fopen(root_cert_file, "r");
-    if (!fp) {
-        perror("Failed to open root certificate");
-        return;
-    }
-    root_cert = PEM_read_X509(fp, NULL, NULL, NULL);
-    fclose(fp);
+//     // Load root certificate
+//     FILE *fp = fopen(root_cert_file, "r");
+//     if (!fp) {
+//         perror("Failed to open root certificate");
+//         return;
+//     }
+//     root_cert = PEM_read_X509(fp, NULL, NULL, NULL);
+//     fclose(fp);
 
-    // Load root private key
-    fp = fopen(root_key_file, "r");
-    if (!fp) {
-        perror("Failed to open root private key");
-        return;
-    }
-    root_key = PEM_read_PrivateKey(fp, NULL, NULL, NULL);
-    fclose(fp);
-    printf("Successfully loaded root certificate\n");
+//     // Load root private key
+//     fp = fopen(root_key_file, "r");
+//     if (!fp) {
+//         perror("Failed to open root private key");
+//         return;
+//     }
+//     root_key = PEM_read_PrivateKey(fp, NULL, NULL, NULL);
+//     fclose(fp);
+//     printf("Successfully loaded root certificate\n");
 
-    /*---GENERATE SERVER CERTIFICATE-----------------------------------------*/
-    /* Certificates are generated using Certificate Signing Requests (CSR). 
-    The steps are as follows:
-    1. Generate new public/private key pair for the server certificate
-    2. Create new CSR using server key
-    3. Sign CSR using root certificate 
-    4. Save */
+//     /*---GENERATE SERVER CERTIFICATE-----------------------------------------*/
+//     /* Certificates are generated using Certificate Signing Requests (CSR). 
+//     The steps are as follows:
+//     1. Generate new public/private key pair for the server certificate
+//     2. Create new CSR using server key
+//     3. Sign CSR using root certificate 
+//     4. Save */
 
-    // 1. Generate public/private key pair for server certificate
-    EVP_PKEY* server_key = EVP_PKEY_new();  // data structure for storing private key
-    RSA* rsa = RSA_generate_key(
-        2048,   /* number of bits for the key - 2048 is a sensible value */
-        RSA_F4, /* exponent - RSA_F4 is defined as 0x10001L */
-        NULL,   /* callback - can be NULL if we aren't displaying progress */
-        NULL    /* callback argument - not needed in this case */
-    );
-    if(rsa == NULL) {
-        printf("Failed to generate key for self-signed certificate. Exiting...\n");
-        ERR_get_error();
-        exit(EXIT_FAILURE);
-    }
-    EVP_PKEY_assign_RSA(server_key, rsa);     // Assign key to data structure
-    printf("Successfully generated key for server certificate\n");
+//     // 1. Generate public/private key pair for server certificate
+//     EVP_PKEY* server_key = EVP_PKEY_new();  // data structure for storing private key
+//     RSA* rsa = RSA_generate_key(
+//         2048,   /* number of bits for the key - 2048 is a sensible value */
+//         RSA_F4, /* exponent - RSA_F4 is defined as 0x10001L */
+//         NULL,   /* callback - can be NULL if we aren't displaying progress */
+//         NULL    /* callback argument - not needed in this case */
+//     );
+//     if(rsa == NULL) {
+//         printf("Failed to generate key for self-signed certificate. Exiting...\n");
+//         ERR_get_error();
+//         exit(EXIT_FAILURE);
+//     }
+//     EVP_PKEY_assign_RSA(server_key, rsa);     // Assign key to data structure
+//     printf("Successfully generated key for server certificate\n");
 
-    // 2. Create a new Certificate Signing Request (CSR). Use server's private key
-    //    in creation of CSR and sign using root certificate private key
-    csr = X509_REQ_new();
-    X509_REQ_set_version(csr, 1);  // Version 1
-    X509_REQ_set_pubkey(csr, server_key);
+//     // 2. Create a new Certificate Signing Request (CSR). Use server's private key
+//     //    in creation of CSR and sign using root certificate private key
+//     csr = X509_REQ_new();
+//     X509_REQ_set_version(csr, 1);  // Version 1
+//     X509_REQ_set_pubkey(csr, server_key);
 
-    // Provide country code ("C"), organization ("O") and common name ("CN")
-    printf("Adding fields to CSR\n");
-    X509_NAME *name = X509_REQ_get_subject_name(csr);
-    X509_NAME_add_entry_by_txt(name, "C", MBSTRING_ASC, (unsigned char *)"US", -1, -1, 0);
-    X509_NAME_add_entry_by_txt(name, "O", MBSTRING_ASC, (unsigned char *)"Example", -1, -1, 0);
-    X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, (unsigned char *) hostname, -1, -1, 0);
+//     // Provide country code ("C"), organization ("O") and common name ("CN")
+//     printf("Adding fields to CSR\n");
+//     X509_NAME *name = X509_REQ_get_subject_name(csr);
+//     X509_NAME_add_entry_by_txt(name, "C", MBSTRING_ASC, (unsigned char *)"US", -1, -1, 0);
+//     X509_NAME_add_entry_by_txt(name, "O", MBSTRING_ASC, (unsigned char *)"Example", -1, -1, 0);
+//     X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, (unsigned char *) hostname, -1, -1, 0);
 
-    // Add the server's private key to the CSR
-    X509_REQ_sign(csr, root_key, EVP_sha256());
+//     // Add the server's private key to the CSR
+//     X509_REQ_sign(csr, root_key, EVP_sha256());
 
-    // Create the server certificate
-    server_cert = X509_new();
-    X509_set_version(server_cert, 2);  // Version 3
-    ASN1_INTEGER_set(X509_get_serialNumber(server_cert), 1);
-    X509_gmtime_adj(X509_get_notBefore(server_cert), 0);
-    X509_gmtime_adj(X509_get_notAfter(server_cert), 31536000L);  // 1 year validity
-    X509_set_subject_name(server_cert, X509_REQ_get_subject_name(csr));
-    X509_set_issuer_name(server_cert, X509_get_subject_name(root_cert));  // Root is the issuer
-    X509_set_pubkey(server_cert, server_key);
+//     // Create the server certificate
+//     server_cert = X509_new();
+//     X509_set_version(server_cert, 2);  // Version 3
+//     ASN1_INTEGER_set(X509_get_serialNumber(server_cert), 1);
+//     X509_gmtime_adj(X509_get_notBefore(server_cert), 0);
+//     X509_gmtime_adj(X509_get_notAfter(server_cert), 31536000L);  // 1 year validity
+//     X509_set_subject_name(server_cert, X509_REQ_get_subject_name(csr));
+//     X509_set_issuer_name(server_cert, X509_get_subject_name(root_cert));  // Root is the issuer
+//     X509_set_pubkey(server_cert, server_key);
 
 
-    // X509_EXTENSION *san_extension  = X509_EXTENSION_new();
-    // if (!X509_EXTENSION_set_object(san_extension, OBJ_nid2obj(NID_subject_alt_name))) {
-    //     fprintf(stderr, "Error setting SAN extension object\n");
-    //     return;
-    // }
-    // // SAN format: "DNS:hostname1,DNS:hostname2,IP:192.168.1.1"
-    // if (!X509_EXTENSION_set_data(san_extension, (unsigned char*)hostname)) {
-    //     fprintf(stderr, "Error setting SAN extension data\n");
-    //     return;
-    // }
-    // if (!X509_add_ext(server_cert, san_extension, -1)) {
-    //     fprintf(stderr, "Error adding SAN extension to server certificate\n");
-    //     return;
-    // }
+//     // X509_EXTENSION *san_extension  = X509_EXTENSION_new();
+//     // if (!X509_EXTENSION_set_object(san_extension, OBJ_nid2obj(NID_subject_alt_name))) {
+//     //     fprintf(stderr, "Error setting SAN extension object\n");
+//     //     return;
+//     // }
+//     // // SAN format: "DNS:hostname1,DNS:hostname2,IP:192.168.1.1"
+//     // if (!X509_EXTENSION_set_data(san_extension, (unsigned char*)hostname)) {
+//     //     fprintf(stderr, "Error setting SAN extension data\n");
+//     //     return;
+//     // }
+//     // if (!X509_add_ext(server_cert, san_extension, -1)) {
+//     //     fprintf(stderr, "Error adding SAN extension to server certificate\n");
+//     //     return;
+//     // }
 
-    // Sign the server certificate with the root private key
-    X509_sign(server_cert, root_key, EVP_sha256());
+//     // Sign the server certificate with the root private key
+//     X509_sign(server_cert, root_key, EVP_sha256());
 
-    // Save the server certificate amd private key to a file
-    strcpy(server_cert_file, hostname);
-    strcpy(server_key_file, hostname);
-    strcat(server_cert_file, ".crt");
-    strcat(server_key_file, ".key");
+//     // Save the server certificate amd private key to a file
+//     strcpy(server_cert_file, hostname);
+//     strcpy(server_key_file, hostname);
+//     strcat(server_cert_file, ".crt");
+//     strcat(server_key_file, ".key");
     
-    printf("File name of server certificate: %s\n", server_cert_file);
-    printf("File name of server pirvate key: %s\n", server_key_file);
+//     printf("File name of server certificate: %s\n", server_cert_file);
+//     printf("File name of server pirvate key: %s\n", server_key_file);
 
 
-    fp = fopen(server_cert_file, "w");
-    PEM_write_X509(fp, server_cert);
-    fclose(fp);
+//     fp = fopen(server_cert_file, "w");
+//     PEM_write_X509(fp, server_cert);
+//     fclose(fp);
 
-    fp = fopen(server_key_file, "w");
-    PEM_write_PrivateKey(fp, server_key, NULL, NULL, 0, NULL, NULL);
-    fclose(fp);
+//     fp = fopen(server_key_file, "w");
+//     PEM_write_PrivateKey(fp, server_key, NULL, NULL, 0, NULL, NULL);
+//     fclose(fp);
 
-    // Cleanup
-    X509_free(root_cert);
-    EVP_PKEY_free(root_key);
-    EVP_PKEY_free(server_key);
-    X509_REQ_free(csr);
-    X509_free(server_cert);
+//     // Cleanup
+//     X509_free(root_cert);
+//     EVP_PKEY_free(root_key);
+//     EVP_PKEY_free(server_key);
+//     X509_REQ_free(csr);
+//     X509_free(server_cert);
 
-    printf("Server certificate and private key generated and signed successfully.\n");
+//     printf("Server certificate and private key generated and signed successfully.\n");
+// }
+
+void create_server_certificate(const char* root_cert_file, const char* root_key_file, 
+                               char* hostname, char* server_cert_file, char* server_key_file, 
+                               const char* serial_number_file) {
+
+    printf("Certificate Commands:\n");
+    /*---1. CREATE SERVER SUBJECT -------------------------------------------*/
+    // Curl relies on the Common Name (CN) in the subject field for domain validation.
+    // Browsers rely on the SAN field for domain validation
+    char subject[500];
+    snprintf(subject, sizeof(subject), 
+             "/C=US/ST=MA/L=Boston/O=Tufts/OU=GSE/CN=%s/emailAddress=it@example.com", 
+             hostname);
+    // printf("Subject: %s\n", subject);
+
+
+    /*---2. CREATE PRIVATE KEY ----------------------------------------------*/
+    // Create private key for server certificate    
+    char cmd_create_private_key[500];
+    snprintf(cmd_create_private_key, sizeof(cmd_create_private_key), 
+             "openssl genpkey -algorithm rsa -pkeyopt rsa_keygen_bits:2048 -out certificates/%s_key.pem > /dev/null 2>&1", hostname);
+    printf("Private_Key Command: %s\n", cmd_create_private_key);
+    system(cmd_create_private_key);
+    snprintf(server_key_file, HOST_NAME_LENGTH, "certificates/%s_key.pem", hostname);
+
+    /*---3. CREATE CERTIFICATE SIGNING REQUEST (CSR) ------------------------*/
+    // The Certificate Signing Request relies on the OpenSSL configuration file. However, the default config file doesn't
+    // include certificate parameters required by browsers, such as the Subject Alternate Name (SAN) (which needs to be
+    // determined dynamically based on the requested host name), or the keyUsage field. To incorporate these, a custom openssl 
+    // config file is created, which includes the default elements as well as the added elements. The custom config file is 
+    // then referenced in the CSR creation command by the -config field.
+
+    // 3.1: Create custom configuration file
+    remove("openssl_custom.cnf");                            // Remove custom config file from prior CSR
+    system("cp /etc/ssl/openssl.cnf openssl_custom.cnf");    // Copy default config file
+    char cmd_create_custom_config_file[400];
+    snprintf(cmd_create_custom_config_file, sizeof(cmd_create_custom_config_file), // Add needed fields to custom config file
+             "echo \"\n[ v3_req ]\nbasicConstraints = CA:false\nkeyUsage = critical, digitalSignature, keyEncipherment\nextendedKeyUsage = serverAuth\nsubjectAltName = DNS:%s\" >> openssl_custom.cnf", 
+             hostname);
+    system(cmd_create_custom_config_file);
+
+    // 3.2: Create Certificate Signing Request using custom config file  
+    char cmd_create_CSR[500];
+    snprintf(cmd_create_CSR, sizeof(cmd_create_CSR), 
+             "openssl req -new -key certificates/%s_key.pem -out certificates/%s_csr.pem -subj %s -config openssl_custom.cnf", hostname, hostname, subject);
+    printf("Create CSR: %s\n", cmd_create_CSR);
+    system(cmd_create_CSR);
+
+    /*---4. SIGN CSR WITH CERTIFICATE AUTHORITY ----------------------------*/
+    char command_sign_CSR[500];
+    snprintf(command_sign_CSR, sizeof(command_sign_CSR), 
+             "openssl x509 -req -days 365 -in certificates/%s_csr.pem -CA %s -CAkey %s -CAcreateserial -out certificates/%s_cert.pem -extfile openssl_custom.cnf -extensions v3_req", 
+             hostname, root_cert_file, root_key_file, hostname);
+    printf("CA Sign CSR Command: %s\n", command_sign_CSR);
+    system(command_sign_CSR);
+    snprintf(server_cert_file, HOST_NAME_LENGTH, "certificates/%s_cert.pem", hostname);
+
+
+    /*---PRIOR APPROACH------------------------------------------------------*/
+    
+    // EVP_PKEY *root_key = NULL;
+    // X509 *root_cert = NULL;
+    // X509_REQ *csr = NULL;
+    // X509 *server_cert = NULL;
+
+    // /*---LOAD ROOT CERTIFICATE-----------------------------------------------*/
+
+    // // Load root certificate
+    // FILE *fp = fopen(root_cert_file, "r");
+    // if (!fp) {
+    //     perror("Failed to open root certificate");
+    //     return;
+    // }
+    // root_cert = PEM_read_X509(fp, NULL, NULL, NULL);
+    // fclose(fp);
+
+    // // Load root private key
+    // fp = fopen(root_key_file, "r");
+    // if (!fp) {
+    //     perror("Failed to open root private key");
+    //     return;
+    // }
+    // root_key = PEM_read_PrivateKey(fp, NULL, NULL, NULL);
+    // fclose(fp);
+    // printf("Successfully loaded root certificate\n");
+
+    // /*---GENERATE SERVER CERTIFICATE-----------------------------------------*/
+    // /* Certificates are generated using Certificate Signing Requests (CSR). 
+    // The steps are as follows:
+    // 1. Generate new public/private key pair for the server certificate
+    // 2. Create new CSR using server key
+    // 3. Sign CSR using root certificate 
+    // 4. Save */
+
+    // // 1. Generate public/private key pair for server certificate
+    // EVP_PKEY* server_key = EVP_PKEY_new();  // data structure for storing private key
+    // RSA* rsa = RSA_generate_key(
+    //     2048,   /* number of bits for the key - 2048 is a sensible value */
+    //     RSA_F4, /* exponent - RSA_F4 is defined as 0x10001L */
+    //     NULL,   /* callback - can be NULL if we aren't displaying progress */
+    //     NULL    /* callback argument - not needed in this case */
+    // );
+    // if(rsa == NULL) {
+    //     printf("Failed to generate key for self-signed certificate. Exiting...\n");
+    //     ERR_get_error();
+    //     exit(EXIT_FAILURE);
+    // }
+    // EVP_PKEY_assign_RSA(server_key, rsa);     // Assign key to data structure
+    // printf("Successfully generated key for server certificate\n");
+
+    // // 2. Create a new Certificate Signing Request (CSR). Use server's private key
+    // //    in creation of CSR and sign using root certificate private key
+    // csr = X509_REQ_new();
+    // X509_REQ_set_version(csr, 1);  // Version 1
+    // X509_REQ_set_pubkey(csr, server_key);
+
+    // // Provide country code ("C"), organization ("O") and common name ("CN")
+    // printf("Adding fields to CSR\n");
+    // X509_NAME *name = X509_REQ_get_subject_name(csr);
+    // X509_NAME_add_entry_by_txt(name, "C", MBSTRING_ASC, (unsigned char *)"US", -1, -1, 0);
+    // X509_NAME_add_entry_by_txt(name, "O", MBSTRING_ASC, (unsigned char *)"Example", -1, -1, 0);
+    // X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, (unsigned char *) hostname, -1, -1, 0);
+
+    // // Add the server's private key to the CSR
+    // X509_REQ_sign(csr, root_key, EVP_sha256());
+
+    // // Create the server certificate. Important - serial number
+    // // needs to be unique for each certificate. Store in local file and 
+    // // incrmement for each certificate
+    // printf("Creating server certificate\n");
+    // server_cert = X509_new();
+    // int serial_number = read_increment_save_serial_number(serial_number_file);
+    // X509_set_version(server_cert, 2);  // Version 3
+    // ASN1_INTEGER_set(X509_get_serialNumber(server_cert), serial_number);
+    // X509_gmtime_adj(X509_get_notBefore(server_cert), 0);
+    // X509_gmtime_adj(X509_get_notAfter(server_cert), 31536000L);  // 1 year validity
+    // X509_set_subject_name(server_cert, X509_REQ_get_subject_name(csr));
+    // X509_set_issuer_name(server_cert, X509_get_subject_name(root_cert));  // Root is the issuer
+    // X509_set_pubkey(server_cert, server_key);
+
+    // // Add Subject Alternative Name (SAN)
+    // printf("Adding SAN field\n");
+    // X509_EXTENSION *ext;
+    // char san_buffer[256];
+    // snprintf(san_buffer, sizeof(san_buffer), "DNS:%s", hostname);
+    // ext = X509V3_EXT_conf_nid(NULL, NULL, NID_subject_alt_name, san_buffer);
+    // if (!ext) {
+    //     fprintf(stderr, "Failed to create SAN extension\n");
+    //     exit(EXIT_FAILURE);
+    // }
+    // X509_add_ext(server_cert, ext, -1);
+    // X509_EXTENSION_free(ext);
+
+    // // Add keyUsage extension (critical)
+    // printf("Adding keyUsage extension\n");
+    // ext = X509V3_EXT_conf_nid(NULL, NULL, NID_key_usage, "critical,digitalSignature,keyEncipherment");
+    // if (!ext) {
+    //     fprintf(stderr, "Failed to create keyUsage extension\n");
+    //     exit(EXIT_FAILURE);
+    // }
+    // X509_add_ext(server_cert, ext, -1);
+    // X509_EXTENSION_free(ext);
+
+    // // Add extendedKeyUsage extension
+    // printf("Adding extendedkeyUsage extension\n");
+    // ext = X509V3_EXT_conf_nid(NULL, NULL, NID_ext_key_usage, "serverAuth");
+    // if (!ext) {
+    //     fprintf(stderr, "Failed to create extendedKeyUsage extension\n");
+    //     exit(EXIT_FAILURE);
+    // }
+    // X509_add_ext(server_cert, ext, -1);
+    // X509_EXTENSION_free(ext);
+
+    // // SAN (Subject Alternative Name) field needed by browser
+    // // X509_EXTENSION *san_extension  = X509_EXTENSION_new();
+    // // if (!X509_EXTENSION_set_object(san_extension, OBJ_nid2obj(NID_subject_alt_name))) {
+    // //     fprintf(stderr, "Error setting SAN extension object\n");
+    // //     return;
+    // // }
+    // // // SAN format: "DNS:hostname1,DNS:hostname2,IP:192.168.1.1"
+    // // if (!X509_EXTENSION_set_data(san_extension, (unsigned char*)hostname)) {
+    // //     fprintf(stderr, "Error setting SAN extension data\n");
+    // //     return;
+    // // }
+    // // if (!X509_add_ext(server_cert, san_extension, -1)) {
+    // //     fprintf(stderr, "Error adding SAN extension to server certificate\n");
+    // //     return;
+    // // }
+
+    // // Sign the server certificate with the root private key
+    // X509_sign(server_cert, root_key, EVP_sha256());
+
+    // // Save the server certificate amd private key to a file
+    // strcpy(server_cert_file, hostname);
+    // strcpy(server_key_file, hostname);
+    // strcat(server_cert_file, ".crt");
+    // strcat(server_key_file, ".key");
+    
+    // printf("File name of server certificate: %s\n", server_cert_file);
+    // printf("File name of server pirvate key: %s\n", server_key_file);
+
+
+    // fp = fopen(server_cert_file, "w");
+    // PEM_write_X509(fp, server_cert);
+    // fclose(fp);
+
+    // fp = fopen(server_key_file, "w");
+    // PEM_write_PrivateKey(fp, server_key, NULL, NULL, 0, NULL, NULL);
+    // fclose(fp);
+
+    // // Cleanup
+    // X509_free(root_cert);
+    // EVP_PKEY_free(root_key);
+    // EVP_PKEY_free(server_key);
+    // X509_REQ_free(csr);
+    // X509_free(server_cert);
+
+    // printf("Server certificate and private key generated and signed successfully.\n");
 }
 
+int read_increment_save_serial_number(const char *file_path) {
+    FILE *file;
+    int serial_number = 0;
+
+    // Open the file for reading
+    file = fopen(file_path, "r");
+    if (!file) {
+        perror("Failed to open file for reading");
+        // If the file doesn't exist, assume starting at 1
+        serial_number = 1;
+    } else {
+        // Read the serial number from the file
+        if (fscanf(file, "%d", &serial_number) != 1) {
+            perror("Failed to read serial number");
+            serial_number = 1;  // Default value
+        }
+        fclose(file);
+    }
+
+    // Increment the serial number
+    serial_number++;
+
+    // Open the file for writing
+    file = fopen(file_path, "w");
+    if (!file) {
+        perror("Failed to open file for writing");
+        exit(EXIT_FAILURE);
+    }
+
+    // Write the updated serial number to the file
+    fprintf(file, "%d\n", serial_number);
+    fclose(file);
+
+    printf("Updated serial number: %ld\n", serial_number);
+    return serial_number;
+}
 
 
 void initialize_proxy_test(int listening_port) {
 
     const char *root_cert_file = "ca.crt";
     const char *root_key_file = "ca.key";
+    const char *serial_number_file = "serial_number.txt";
+
 
     char server_cert_file[HOST_NAME_LENGTH] = {0};
     char server_key_file[HOST_NAME_LENGTH] = {0};
@@ -324,7 +581,7 @@ void initialize_proxy_test(int listening_port) {
             printf("Sent response to client:\n%s\n", response);
 
             // Create server certificate and save to disk
-            create_server_certificate(root_cert_file, root_key_file, hostname, server_cert_file, server_key_file);
+            create_server_certificate(root_cert_file, root_key_file, hostname, server_cert_file, server_key_file, serial_number_file);
             printf("\n--------------------\nCERTIFICATE CREATED\n--------------------\n\n");
 
             // Prepare SSL Context object
@@ -384,11 +641,13 @@ void run_proxy(int listening_port, bool tunnel_mode) {
 
     const char *root_cert_file = "ca.crt";
     const char *root_key_file = "ca.key";
+    const char *serial_number_file = "serial_number.txt";
+
 
     proxy_t* p = initialize_proxy(listening_port);
     printf("DEBUG: Created Proxy object\n");
 
-    fd_set read_fds; 
+    fd_set read_fds;
     FD_ZERO(&read_fds);
 
     // struct timeval timeout;
@@ -404,7 +663,7 @@ void run_proxy(int listening_port, bool tunnel_mode) {
         proxy_create_fds(p, &read_fds);
         FD_SET(p->listening_fd, &read_fds);
         FD_SET(STDIN_FILENO, &read_fds);
-        usleep(100000);
+        //usleep(100000);
         print_cs(p);
 
 
@@ -539,7 +798,7 @@ void run_proxy(int listening_port, bool tunnel_mode) {
                         printf("Sent response to client:\n%s\n", response);
 
                         // Create server certificate and save to disk
-                        create_server_certificate(root_cert_file, root_key_file, hostname, server_cert_file, server_key_file);
+                        create_server_certificate(root_cert_file, root_key_file, hostname, server_cert_file, server_key_file, serial_number_file);
                         printf("\n--------------------\nCERTIFICATE CREATED\n--------------------\n\n");
 
                         // Prepare SSL Context object

@@ -97,6 +97,7 @@ void proxy_create_fds(proxy_t* p, fd_set *read_fds);
 void proxy_remove_cs(proxy_t* p, client_server_t* cs);
 
 void print_cs(proxy_t* p);
+int read_increment_save_serial_number(const char *file_path);
 
 #endif
 //-------------------------------------------------------------------------------------------------
