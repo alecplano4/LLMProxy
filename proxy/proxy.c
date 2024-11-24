@@ -7,6 +7,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <sys/_types/_fd_def.h>
 #include <sys/socket.h>
 #include <errno.h>      // Allows for printing of perror()
 #include <arpa/inet.h>
@@ -21,6 +22,9 @@
 #include <openssl/pem.h>
 #include <openssl/bn.h>
 #include <openssl/bio.h>
+#include <openssl/x509v3.h>
+#include <openssl/rand.h>
+#include <openssl/evp.h>
 #include <fcntl.h>
 #include <stdio.h>
 
@@ -32,7 +36,7 @@
 // ----GLOBAL VARIABLES----------------------------------------------------------------------------
 #define MAX_CLIENT_CONNECTIONS 10
 #define HOST_NAME_LENGTH 100
-#define BUFSIZE 1000
+#define BUFSIZE 81920
 
 X509 *create_signed_cert(SSL_CTX *root_ctx, const char *common_name);
 
@@ -370,6 +374,7 @@ proxy_t* initialize_proxy(int listening_port) {
     //new_proxy->client_read = true;
     new_proxy->listening_fd = create_socket(listening_port, &(new_proxy->proxy_addr));
     new_proxy->head = NULL;
+    new_proxy->num_cs = 0;
 
     return new_proxy;
 }
@@ -386,12 +391,22 @@ void run_proxy(int listening_port, bool tunnel_mode) {
     fd_set read_fds; 
     FD_ZERO(&read_fds);
 
+    // struct timeval timeout;
+    // timeout.tv_sec = 1;  // Seconds
+    // timeout.tv_usec = 0; // Microseconds (500ms)
+
     while(1) {
 
         //TODO: create a set_fds function that loops through linked list and adds fds to sets
-
+        //printf("NEW Select call");
         /* Always want to be listening for new connection*/
+        FD_ZERO(&read_fds);
+        proxy_create_fds(p, &read_fds);
         FD_SET(p->listening_fd, &read_fds);
+        FD_SET(STDIN_FILENO, &read_fds);
+        usleep(100000);
+        print_cs(p);
+
 
         int select_ret = select(FD_SETSIZE, &read_fds, NULL, NULL, NULL);
 
@@ -402,17 +417,30 @@ void run_proxy(int listening_port, bool tunnel_mode) {
         }
         /* No data available on any file descriptors */
         else if (select_ret == 0) {
-            #ifdef ALEC_DEBUG
             printf("DEBUG: No data available due to timeout\n");
-            #endif
         }
         /* socket file descriptors ready for reading */
         else {
             /* Current implementation does not work concurently 
                 it runs all instructions for a server at once*/
+            if(FD_ISSET(STDIN_FILENO, &read_fds)){
+                char buffer[1024];
+                int bytes_read;
+
+                // Read input from stdin
+                bytes_read = read(STDIN_FILENO, buffer, sizeof(buffer) - 1);
+                printf("%.*s\n", bytes_read, buffer);
+                if(strncmp(buffer,"ls\n",3) == 0){
+                    printf("here\n");
+                    print_cs(p);
+                }
+
+            }
             if (FD_ISSET(p->listening_fd, &read_fds)) {
                 if(tunnel_mode){
                     client_server_t* cs = malloc(sizeof(client_server_t));
+                    cs->client_read = true;
+                    cs->invalid = false;
                     /* Potential client local variables */
                     
                     cs->client_addr_len = sizeof(cs->client_addr);
@@ -426,8 +454,6 @@ void run_proxy(int listening_port, bool tunnel_mode) {
                     int bytes_read = read(cs->client_fd, buf, 10000);
                     uint8_t header_copy_for_server[10000];
                     memcpy(header_copy_for_server, buf, bytes_read);
-                    printf("Header Recieved from client:\n");
-                    printf("%s\n\n", header_copy_for_server);
 
                     printf("parsing the header:\n");
                     cs->h = proxy_parse_header((char*)buf);
@@ -436,12 +462,19 @@ void run_proxy(int listening_port, bool tunnel_mode) {
 
 
                     printf("Connecting to server\n\n");
-                    int server_fd = proxy_connect_server(cs->h);
-                    printf("HEADER COPY FOR SERVER:%s---", header_copy_for_server);
-                    int l = write(server_fd, header_copy_for_server, bytes_read);
+                    cs->server_fd = proxy_connect_server(cs->h);
+                    printf("HEADER COPY FOR SERVER %d :\n%s---",bytes_read, header_copy_for_server);
+                    int l = write(cs->server_fd, header_copy_for_server, bytes_read);
+
+                    cs->data = malloc(bytes_read);
+                    memcpy(cs->data, header_copy_for_server, bytes_read);
+                    cs->data_len = bytes_read;
+                    cs->client_read = false;
+
+                    proxy_add_cs(p, cs);
 
                     // bzero(buf, 10000);
-                    // int b = read(server_fd, buf, 10000);
+                    // int b = read(cs->server_fd, buf, 10000);
                     // printf("recieved messgae from server len = %d:\n", b);
                     // printf("%s\n", buf);
                     
@@ -450,39 +483,48 @@ void run_proxy(int listening_port, bool tunnel_mode) {
                     // printf("%s\n", buf);
 
 
-                    char* server_resp_buf;
-                    int server_resp_buf_size;
-                    char* server_header;
-                    int server_header_size;
+                    // char* server_resp_buf;
+                    // int server_resp_buf_size;
+                    // char* server_header;
+                    // int server_header_size;
                     // proxy_read_server(NULL, server_fd,
                     //               &server_resp_buf, &server_resp_buf_size,
                     //               &server_header, &server_header_size, true);
-                    proxy_read_server(server_fd, &server_resp_buf, &server_resp_buf_size, &server_header, &server_header_size);
-                    printf("\nSERVER RESPONSE BUF \n%s", server_resp_buf);
-                    write(cs->client_fd, server_resp_buf, server_resp_buf_size);
+                    // proxy_read_server(server_fd, &server_resp_buf, &server_resp_buf_size, &server_header, &server_header_size);
+                    // printf("\nSERVER RESPONSE BUF \n%s", server_resp_buf);
+                    // write(cs->client_fd, server_resp_buf, server_resp_buf_size);
                     // printf("relaying data back to client\n");
-                    // write(cs->client_fd, buf, b);
+                    //write(cs->client_fd, buf, b);
                     
 
                 }else{
-                    struct sockaddr_in client_addr;
-                    unsigned int len = sizeof(client_addr);
-                    SSL *ssl;
+                    printf("New Connection Inbound\n");
+                    client_server_t* cs = malloc(sizeof(client_server_t));
+                    cs->client_read = true;
+                    cs->invalid = false;
+                    cs->bytes_read = 0;
+                    /* Potential client local variables */
+                    
+                    cs->client_addr_len = sizeof(cs->client_addr);
+
+                    // struct sockaddr_in client_addr;
+                    // unsigned int len = sizeof(client_addr);
+                    // SSL *ssl;
 
                     char server_cert_file[HOST_NAME_LENGTH] = {0};
                     char server_key_file[HOST_NAME_LENGTH] = {0};
-                    SSL_CTX *ctx;
+                    
 
-                    int client_socket = accept(p->listening_fd, (struct sockaddr*)&client_addr, &len);
-                    if (client_socket < 0) {
+                    cs->client_fd = accept(p->listening_fd, (struct sockaddr*)&(cs->client_addr), &(cs->client_addr_len));
+                    if (cs->client_fd < 0) {
                         perror("Unable to accept");
                         exit(EXIT_FAILURE);
                     }
                     printf("Client TCP handshake successful\n");
                     // Receive client data
-                    char request[200];
+                    char request[BUFSIZE];
                     char hostname[100];
-                    int bytes_received = recv(client_socket, request, sizeof(request)-1, 0);
+                    int bytes_received = recv(cs->client_fd, request, sizeof(request)-1, 0);
                     printf("Bytes received: %d\n", bytes_received);
                     printf("Message: %s\n", request);
                     extract_hostname(request, hostname);
@@ -493,7 +535,7 @@ void run_proxy(int listening_port, bool tunnel_mode) {
                     if (strstr(request, "CONNECT") == request) {
                         // Respond with "HTTP/1.1 200 Connection Established"
                         const char *response = "HTTP/1.1 200 Connection Established\r\n\r\n";
-                        send(client_socket, response, strlen(response), 0);
+                        send(cs->client_fd, response, strlen(response), 0);
                         printf("Sent response to client:\n%s\n", response);
 
                         // Create server certificate and save to disk
@@ -501,26 +543,26 @@ void run_proxy(int listening_port, bool tunnel_mode) {
                         printf("\n--------------------\nCERTIFICATE CREATED\n--------------------\n\n");
 
                         // Prepare SSL Context object
-                        ctx = create_context();                                    // Get SSL Context to store TLS configuration parameters
+                        cs->client_ctx = create_context();                                    // Get SSL Context to store TLS configuration parameters
                         printf("Context created\n");
-                        configure_context(ctx, server_cert_file, server_key_file); // Load certificate and private key into context
+                        configure_context(cs->client_ctx, server_cert_file, server_key_file); // Load certificate and private key into context
                         printf("Certificate loaded into context\n");
 
                         // Set client connection to SSL (perform SSL handshake)
-                        ssl = SSL_new(ctx);                // Create SSL object
-                        SSL_set_fd(ssl, client_socket);    // Link SSL object to accepted TCP socket
+                        cs->client_ssl = SSL_new(cs->client_ctx);      // Create SSL object
+                        SSL_set_fd(cs->client_ssl, cs->client_fd);    // Link SSL object to accepted TCP socket
                         printf("SSL object created and linked to TCP socket\n");
 
-                        if (SSL_accept(ssl) <= 0) {        // Perform SSL handshake
+                        if (SSL_accept(cs->client_ssl) <= 0) {        // Perform SSL handshake
                             printf("Unsuccessful client SSL handshake\n");
                             ERR_print_errors_fp(stderr);
                         } else {
                             printf("SSL handshake completed.\n");
                         }
                         /* DONE WITH SSL CONNECTION */
-
+                        /* AT THIS POINT WE WANT TO GET INTO THE PARALLEL FACILOTATION */
                         /* RECIEVE NEXT MESSAGE */
-                        bytes_received = SSL_read(ssl, request, sizeof(request) - 1);
+                        bytes_received = SSL_read(cs->client_ssl, request, sizeof(request) - 1);
                         if (bytes_received > 0) {
                             request[bytes_received] = '\0'; // Null-terminate the received message
                             printf("Received message from client:\n %s\n\n", request);
@@ -534,19 +576,20 @@ void run_proxy(int listening_port, bool tunnel_mode) {
                         header_elems* header = proxy_parse_header(request_copy);
                         print_header_elems(header);
                         printf("---------------\n");
+                       
 
 
                         /* receive a message from the client*/
-                        printf("FORWARDING MESSAGE TO SERVER");
-                        SSL_CTX* server_ctx = SSL_CTX_new(TLS_client_method());
-                        int sockfd = open_connection(hostname, 443);
-                        if (sockfd < 0) {
+                        printf("FORWARDING MESSAGE TO SERVER: %s", request);
+                        cs->server_ctx = SSL_CTX_new(TLS_client_method());
+                        cs->server_fd = open_connection(hostname, 443);
+                        if (cs->server_fd < 0) {
                             fprintf(stderr, "Unable to connect to server\n");
                             exit(EXIT_FAILURE);
                         }
-                        SSL* ssl_server = create_ssl_connection(server_ctx, sockfd);
+                        cs->server_ssl = create_ssl_connection(cs->server_ctx, cs->server_fd);
 
-                        if (SSL_write(ssl_server, request, bytes_received) <= 0) {
+                        if (SSL_write(cs->server_ssl, request, bytes_received) <= 0) {
                             printf("ERROR with ssl_write\n");
                             exit(EXIT_FAILURE);
                         }
@@ -559,104 +602,144 @@ void run_proxy(int listening_port, bool tunnel_mode) {
                         //                 &server_data_size, &server_header, 
                         //                 &server_header_size, false);
 
-                        printf("SERVER HEADER:\n");
-                        printf("%.*s", server_header_size, server_header);
+                        // printf("SERVER HEADER:\n");
+                        // printf("%.*s", server_header_size, server_header);
 
-                        // int bytes;
+                        int bytes;
+                        char server_response[50000] = {0};
+                        bytes = SSL_read(cs->server_ssl, server_response, sizeof(server_response) - 1);
+                        printf("HEADER\n%s\n", server_response);
 
-                        // bytes = SSL_read(ssl_server, server_response, sizeof(server_response) - 1);
 
-                        // if (SSL_write(ssl, server_response, bytes) <= 0) {
+                        char server_response_copy[50000] = {0};
+                        memcpy(server_response_copy, server_response, bytes);
+
+                        header_elems* h = proxy_parse_header(server_response_copy);
+                        print_header_elems(h);
+
+                        cs->data_len = atoi(h->data_len);
+                        cs->bytes_read+=bytes;
+
+                        int header_size = strstr(server_response, "\r\n\r\n") - server_response + 4;
+                        printf("HEADER SIZE = %d\n", header_size);
+                        cs->data_len += header_size;
+
+
+                        if (SSL_write(cs->client_ssl, server_response, bytes) <= 0) {
+                            printf("ERROR with ssl_write\n");
+                            exit(EXIT_FAILURE);
+                        }
+
+                        // bytes = SSL_read(cs->server_ssl, server_response, sizeof(server_response) - 1);
+                        // printf("RESPONSE\n%s\n", server_response);
+                        // if (SSL_write(cs->client_ssl, server_response, bytes) <= 0) {
                         //     printf("ERROR with ssl_write\n");
                         //     exit(EXIT_FAILURE);
                         // }
+                        // printf("RESPONSE\n%s\n", server_response);
+
+
 
 
                         // Close SSL connection and free data structure
-                        SSL_shutdown(ssl);
-                        SSL_free(ssl);
+                        // SSL_shutdown(cs->server_ssl);
+                        // SSL_free(cs->server_ssl);
+                        // SSL_shutdown(cs->client_ssl);
+                        // SSL_free(cs->client_ssl);
+
+
+                        cs->client_read = false;
+                        proxy_add_cs(p, cs);
                     } else {
                         fprintf(stderr, "Invalid request: Not a CONNECT request\n");
                     }
                 }
+
                 
 
-            }else{
-                //for all fds in the list add call relay
+            }
+            //for all fds in the list add call relay
+            client_server_t* cs = p->head;
+            for(int i = 0; i<p->num_cs; i++){
+                if(cs->client_read){
+                    if(tunnel_mode){
+                        if(FD_ISSET(cs->client_fd, &read_fds)){
+                            printf("Client is ready to read\n");
+                            char buf[1000] = {0};
+                            int br = read(cs->client_fd, buf, 1000);
+                            //printf("Read %d bytes from server:\n%s\n", br, buf);
+                            if(br == 0){
+                                printf("Clinet Closed Connection");
+                                cs->invalid = true;
+                            }
+                            cs->client_read = false;
+                        }
+                    }else{
+                        printf("READING FROM CLIENT");
+                        int bytes;
+                        char server_response[BUFSIZE] = {0};
+                        bytes = SSL_read(cs->client_ssl, server_response, BUFSIZE);
+                        //printf("RESPONSE\n%s\n", server_response);
+                        if(bytes == 0){
+                            printf("Clinet Closed Connection");
+                            cs->invalid = true;
+                        }
+                        else if (SSL_write(cs->server_ssl, server_response, bytes) <= 0) {
+                            printf("ERROR with ssl_write\n");
+                            exit(EXIT_FAILURE);
+                        }
+
+                        cs->client_read = false;
+
+                    }
+
+                }else{
+                    if(tunnel_mode){
+                        if(FD_ISSET(cs->server_fd, &read_fds)){
+                            printf("SERVER is ready to read\n");
+                            char buf[1000] = {0};
+                            int br = read(cs->server_fd, buf, 1000);
+                            printf("Read %d bytes from server:\n%s\n", br, buf);
+                            write(cs->client_fd, buf, br);
+                            cs->client_read = true;
+                        }   
+                    }else{
+                        if(FD_ISSET(cs->server_fd, &read_fds)){
+                            printf("SERVER is ready to read\n");
+                            char buf[BUFSIZE] = {0};
+                            int br = SSL_read(cs->server_ssl, buf, BUFSIZE);
+                            if(br == 0){
+                                printf("Clinet Closed Connection");
+                                cs->invalid = true;
+                            }
+                            else if (SSL_write(cs->client_ssl, buf, br) <= 0) {
+                                printf("ERROR with ssl_write\n");
+                                exit(EXIT_FAILURE);
+                            }
+                            cs->bytes_read+=br;
+
+                            if(cs->bytes_read < cs->data_len){
+                                cs->client_read = false; 
+                            }else{
+                                cs->client_read = true;
+                            }
+                            printf("Read %d bytes from server for %d out of %d:(client read = %d)\n", br, cs->bytes_read, cs->data_len, cs->client_read);
+
+                        }   
+                    }
+                                        
+                }
+                cs = cs->next;
+            
             }
         }
     }
     proxy_clean(p);
 }
 
-
-// header_elems* proxy_parse_header(char* header)
-// {
-//     header_elems* h = (header_elems*)calloc(1,sizeof(header_elems));
-
-//     char* nl_delim = "\n";
-//     char* cr_delim = "\r";
-//     char* space_delim = " ";
-//     char* col_delim = ":";
-
-//     h->max_age = NULL;
-
-//     char* command = strtok(header, space_delim);
-
-//     /* while there are commands */
-//     while(command != NULL){
-//         if(strcmp(command, "GET") == 0 || strcmp(command, "HEAD") == 0) {
-//             h->url = strtok(NULL, space_delim);
-//             printf("URL = %s\n", h->url);
-//             char* http_v = strtok(NULL, cr_delim);
-//             printf("HTTP_v = %s\n", http_v);
-
-//         }else if(strcmp(command, "\nHost") == 0) {
-
-//             h->host = strtok(NULL, cr_delim);
-//             h->host++;
-//             if(strstr(h->host, ":") == NULL){
-//                 h->port = "80";
-//             }else{
-//                 char* host_port_delim = (strstr(h->host, ":"));
-//                 *host_port_delim = '\0';
-//                 h->port = host_port_delim+1;
-//             }
-//             printf("HOST = %s\n", h->host);
-//             printf("PORT = %s\n", h->port);
-//         }else if(strcmp(command, "\nAccept") == 0) {
-//             char* a = strtok(NULL, cr_delim);
-
-//         }else if(strcmp(command, "\nProxy-Connection") == 0) {
-//             char* keep_alive = strtok(NULL, cr_delim);
-//             printf("BREKIGN while\n");
-//             break;
-//         }else if(strcmp(command, "\nContent-Length") == 0) {
-//             char* len = strtok(NULL, cr_delim);
-//             len++;
-//             h->data_len = len;
-
-//         }else if(strcmp(command, "\nCache-Control") == 0) {
-//             strtok(NULL, "=");
-//             //Cache-Control: max-age=N
-//             char* max_age = strtok(NULL, cr_delim);
-//             h->max_age = max_age;
-
-//         }else{
-//             strtok(NULL, cr_delim);
-//         }
-
-//         /* get the next command */
-//         command = strtok(NULL, col_delim);
-
-//     }
-//     printf("RETURNING\n");
-
-//     return h;
-// }
-
 header_elems* proxy_parse_header(char* header)
 {
+    printf("PARSING HEADER\n");
     header_elems* h = (header_elems*)calloc(1,sizeof(header_elems));
 
     char* nl_delim = "\n";
@@ -671,6 +754,7 @@ header_elems* proxy_parse_header(char* header)
         //printf("%s\n", line);
         char* inner_last;
         char* command = strtok_r(line, space_delim, &inner_last);
+        //printf("%s\n", command);
 
         if(strcmp(command, "GET") == 0 || strcmp(command, "HEAD") == 0) {
             h->url = strtok_r(NULL, space_delim, &inner_last);
@@ -692,7 +776,8 @@ header_elems* proxy_parse_header(char* header)
             //printf("host len = %d\n",strlen(h->host));
             //printf("PORT = %s\n", h->port);
 
-        }else if(strcmp(command, "Content-Length:") == 0) {
+        }else if(strcmp(command, "Content-Length:") == 0 || 
+                strcmp(command, "content-length:") == 0) {
             char* len = strtok_r(NULL, cr_delim, &inner_last);
             h->data_len = len;
 
@@ -757,96 +842,6 @@ void proxy_clean(proxy_t* p){
     }
 }
 
-// void proxy_read_server(SSL* ssl, int fd, char** buf, int* size, char** h_buf, int* h_size, bool tunnel_mode)
-// {
-//     printf("HERHE\n");
-//     /* read in first set of data */
-//     int buf_multiplier = 1;
-//     char* header_buf = malloc(BUFSIZE*buf_multiplier + 1);
-//     printf("header buf = %p\n", header_buf);
-//     int bytes_read;
-//     if (tunnel_mode){
-//             printf("HERHE\n");
-
-//         bytes_read = read(fd, header_buf, BUFSIZE);
-//         printf("bytes read == %d", bytes_read);
-//     }else{
-//             printf("Hsadf\n");
-
-//         bytes_read = SSL_read(ssl, header_buf, BUFSIZE);
-//     }
-//     printf("HERHE\n");
-
-//     //header_buf[bytes_read] = '\0';
-//     //printf("%s\n", header_buf);
-
-//     printf("HERE1");
-
-//     char* eoh = NULL;
-//     printf("HERE1");
-
-    
-    
-    
-//     //  while((eoh = strstr(header_buf, "\r\n\r\n")) == NULL) {
-//     //     buf_multiplier++;
-//     //     header_buf = realloc(header_buf, BUFSIZE*buf_multiplier + 1);
-
-//     //     int more_bytes;
-//     //     if (tunnel_mode){
-//     //         more_bytes = read(fd, header_buf + bytes_read, BUFSIZE);
-//     //     }else{
-//     //         more_bytes = SSL_read(ssl, header_buf + bytes_read, BUFSIZE);
-//     //     }
-
-//     //     bytes_read+=more_bytes;
-//     //     header_buf[bytes_read] = '\0';
-//     // }
-
-//     // int header_size = (int)(eoh - header_buf)+4;
-//     // printf("HERE2");
-
-
-//     // *h_size = header_size;
-//     // *h_buf = header_buf;
-
-//     // char* header_copy = malloc(header_size + 1);
-//     // memcpy(header_copy, header_buf, header_size);
-//     // header_copy[header_size] = '\0';
-//     // //printf("Header COPY from server: %s\n", header_copy);
-
-//     // /* parse header to get data length*/
-//     // header_elems* h = proxy_parse_header(header_copy);
-//     // int data_size = atoi(h->data_len); //get data size from parsed header
-//     // free(h);
-//     // free(header_copy);
-//     // int data_read = bytes_read - header_size;
-//     // char* data_buf = malloc(data_size);
-
-//     // memcpy(data_buf, eoh+4, data_read);
-//     // int num_bytes_read = data_read;
-
-//     // if (tunnel_mode){
-//     //     num_bytes_read += read(fd, data_buf + num_bytes_read, data_size-num_bytes_read);
-
-//     // }else{
-//     //     num_bytes_read += SSL_read(ssl, data_buf + num_bytes_read, data_size-num_bytes_read);
-//     // }
-
-//     // while (num_bytes_read != data_size) {
-//     //     if (tunnel_mode){
-//     //         num_bytes_read += read(fd, data_buf + num_bytes_read, data_size-num_bytes_read);
-
-//     //     }else{
-//     //         num_bytes_read += SSL_read(ssl, data_buf + num_bytes_read, data_size-num_bytes_read);
-//     //     }
-//     // }
-//     // printf("HERE3");
-
-//     // *buf = data_buf;
-//     // *size = num_bytes_read;
-
-// }
 
 void proxy_read_server(int fd, char** buf, int* size, char** h_buf, int* h_size)
 {
@@ -854,9 +849,10 @@ void proxy_read_server(int fd, char** buf, int* size, char** h_buf, int* h_size)
     int buf_multiplier = 1;
     char* header_buf = malloc(BUFSIZE*buf_multiplier + 1);
     int bytes_read = read(fd, header_buf, BUFSIZE);
-    header_buf[bytes_read] = '\0';
+    printf("bytes read = %d into buffer %p\n", bytes_read, header_buf);
+    //header_buf[bytes_read] = '\0';
     // char* eoh = NULL;
-    printf("%.*s\n",bytes_read,header_buf);
+    // printf("%.*s\n",bytes_read,header_buf);
     // while((eoh = strstr(header_buf, "\r\n\r\n")) == NULL) {
     // printf("%.*s\n",bytes_read,header_buf);
 
@@ -875,7 +871,7 @@ void proxy_read_server(int fd, char** buf, int* size, char** h_buf, int* h_size)
     //     header_buf[bytes_read] = '\0';
 
     // }
-    // printf("here");
+    printf("here");
 
     // int header_size = (int)(eoh - header_buf)+4;
 
@@ -971,4 +967,95 @@ void print_header_elems(header_elems* h)
     printf("Max Age: %s\n", h->max_age);
     printf("Data Len: %s\n", h->data_len);
 
+}
+
+void proxy_add_cs(proxy_t* p, client_server_t* cs)
+{
+    client_server_t* next = p->head;
+    p->head = cs;
+    cs->next = next;
+    p->num_cs++;
+}
+
+void proxy_create_fds(proxy_t* p, fd_set *read_fds)
+{
+    client_server_t* cs = p->head;
+    for(int i = 0; i<p->num_cs; i++){
+        client_server_t* next = cs->next;
+        if(cs->invalid){
+            proxy_remove_cs(p,cs);
+        }
+        else if(cs->client_read){
+            //printf("adding cleint fd\n");
+            FD_SET(cs->client_fd, read_fds);
+        }else{
+            //printf("adding server fd\n");
+
+            FD_SET(cs->server_fd, read_fds);
+        }
+        cs = next;
+    }
+}
+
+
+void proxy_remove_cs(proxy_t* p, client_server_t* cs)
+{
+    if(p->num_cs == 1){
+        if(cs == p->head){
+            p->head = cs->next;
+            SSL_shutdown(cs->server_ssl);
+            SSL_free(cs->server_ssl);
+            SSL_shutdown(cs->client_ssl);
+            SSL_free(cs->client_ssl);
+            free(cs->h);
+            free(cs->data);
+            free(cs);
+            p->num_cs--;
+            return;
+        }
+    }else{
+        if(cs == p->head){
+            p->head = cs->next;
+            SSL_shutdown(cs->server_ssl);
+            SSL_free(cs->server_ssl);
+            SSL_shutdown(cs->client_ssl);
+            SSL_free(cs->client_ssl);
+            free(cs->h);
+            free(cs->data);
+            free(cs);
+            p->num_cs--;
+            return;
+        }
+
+
+        client_server_t* prev = p->head;
+        client_server_t* cur = p->head->next;
+        while(cur!=NULL){
+            if(cur == cs){
+                prev->next = cur->next;
+                SSL_shutdown(cs->server_ssl);
+                SSL_free(cs->server_ssl);
+                SSL_shutdown(cs->client_ssl);
+                SSL_free(cs->client_ssl);
+                free(cur->h);
+                free(cur->data);
+                free(cur);
+                p->num_cs--;
+                return;
+            }
+            cur = cur->next;
+            prev = prev->next;
+        }
+    }
+
+}
+
+void print_cs(proxy_t* p){
+    client_server_t* cs = p->head;
+    client_server_t* next = cs;
+    while(next != NULL) {
+        printf("%d:%d -> ", next->client_fd, next->server_fd);
+        next = next->next;
+    }
+    printf("(null)\n");
 }

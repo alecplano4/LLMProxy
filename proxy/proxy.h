@@ -20,7 +20,6 @@
 #include <openssl/pem.h>
 
 
-#define BUFSIZE 100
 // ----GLOBAL VARIABLES----------------------------------------------------------------------------
 
 // ----STRUCT--------------------------------------------------------------------------------------
@@ -37,13 +36,21 @@ typedef struct client_server{
     bool client_read;
 
     int client_fd;
+    SSL* client_ssl;
+    SSL_CTX* client_ctx;
     struct sockaddr_in client_addr;
     unsigned int client_addr_len;
-
     header_elems* h;
 
-    int server_fd;
+    char* data;
+    int data_len;
 
+    int server_fd;
+    SSL* server_ssl;
+    SSL_CTX* server_ctx;
+    int bytes_read;
+
+    bool invalid;
     struct client_server* next;
 } client_server_t;
 
@@ -51,6 +58,7 @@ typedef struct proxy {
     int listening_fd;
     struct sockaddr_in proxy_addr;
 
+    int num_cs;
     client_server_t* head;
 } proxy_t;
 
@@ -83,8 +91,12 @@ int open_connection(const char *hostname, int port);
 
 void print_header_elems(header_elems* h);
 
+void proxy_add_cs(proxy_t* p, client_server_t* cs);
 
+void proxy_create_fds(proxy_t* p, fd_set *read_fds);
+void proxy_remove_cs(proxy_t* p, client_server_t* cs);
 
+void print_cs(proxy_t* p);
 
 #endif
 //-------------------------------------------------------------------------------------------------
