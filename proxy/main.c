@@ -1,7 +1,7 @@
 //----HEADER---------------------------------------------------------------------------------------
 // Date:        November 2024
 // Script:      main.c 
-// Usage:       ./proxy <port>
+// Usage:       ./proxy <port> 
 //*************************************************************************************************
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,12 +26,11 @@ int main(int argc, char* argv[]) {
     listening_port = atoi(argv[1]);
     if(argc == 3){
         if(strcmp(argv[2],"-tunnel") == 0){
-            printf("tunnelmode\n");
+            printf("Using Tunnel Mode\n");
             tunnel_mode = true;
         }
     }
 
-    //initialize_proxy_test(listening_port);
     run_proxy(listening_port, tunnel_mode);
 }
 

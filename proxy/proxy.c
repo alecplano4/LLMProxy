@@ -5,30 +5,10 @@
 //*************************************************************************************************
 #include "proxy.h"
 
-#include <stdio.h>
-#include <stdint.h>
-#include <sys/_types/_fd_def.h>
-#include <sys/socket.h>
-#include <errno.h>      // Allows for printing of perror()
 #include <arpa/inet.h>
 #include <string.h>
 #include <unistd.h>
-#include <stdlib.h>
-#include <signal.h>
-
-#include <openssl/x509.h>
-#include <openssl/rsa.h>
 #include <openssl/err.h>
-#include <openssl/pem.h>
-#include <openssl/bn.h>
-#include <openssl/bio.h>
-#include <openssl/x509v3.h>
-#include <openssl/rand.h>
-#include <openssl/evp.h>
-#include <fcntl.h>
-#include <stdio.h>
-
-#include <sys/types.h>
 #include <netdb.h>
 
 
@@ -90,7 +70,8 @@ int create_socket(int port, struct sockaddr_in* server_addr)
 
 // Return SSL Context data structure, used to store
 // configuration settings and parameters for SSL connections
-SSL_CTX *create_context() {
+SSL_CTX *create_context()
+{
     const SSL_METHOD *method;
     SSL_CTX *ctx;
 
@@ -107,7 +88,8 @@ SSL_CTX *create_context() {
 }
 
 // Load certificate and private key into SSL Context object
-void configure_context(SSL_CTX *ctx, const char* certificate, const char* key) {
+void configure_context(SSL_CTX *ctx, const char* certificate, const char* key)
+{
     /* Set the key and cert */
     if (SSL_CTX_use_certificate_file(ctx, certificate, SSL_FILETYPE_PEM) <= 0) {
         ERR_print_errors_fp(stderr);
@@ -122,7 +104,8 @@ void configure_context(SSL_CTX *ctx, const char* certificate, const char* key) {
 
 /* Given client connections request and a buffer, return
    the hostname from the connection request in the buffer*/ 
-void extract_hostname(const char *request, char *hostname) {
+void extract_hostname(const char *request, char *hostname)
+{
     char *connect_ptr = strstr(request, "CONNECT ");
     if (connect_ptr) {
         // Move past "CONNECT "
@@ -145,134 +128,10 @@ void extract_hostname(const char *request, char *hostname) {
 }
 
 
-// void create_server_certificate(const char *root_cert_file, const char *root_key_file, char* hostname, char* server_cert_file, char* server_key_file) {
-    
-//     EVP_PKEY *root_key = NULL;
-//     X509 *root_cert = NULL;
-//     X509_REQ *csr = NULL;
-//     X509 *server_cert = NULL;
-
-//     /*---LOAD ROOT CERTIFICATE-----------------------------------------------*/
-
-//     // Load root certificate
-//     FILE *fp = fopen(root_cert_file, "r");
-//     if (!fp) {
-//         perror("Failed to open root certificate");
-//         return;
-//     }
-//     root_cert = PEM_read_X509(fp, NULL, NULL, NULL);
-//     fclose(fp);
-
-//     // Load root private key
-//     fp = fopen(root_key_file, "r");
-//     if (!fp) {
-//         perror("Failed to open root private key");
-//         return;
-//     }
-//     root_key = PEM_read_PrivateKey(fp, NULL, NULL, NULL);
-//     fclose(fp);
-//     printf("Successfully loaded root certificate\n");
-
-//     /*---GENERATE SERVER CERTIFICATE-----------------------------------------*/
-//     /* Certificates are generated using Certificate Signing Requests (CSR). 
-//     The steps are as follows:
-//     1. Generate new public/private key pair for the server certificate
-//     2. Create new CSR using server key
-//     3. Sign CSR using root certificate 
-//     4. Save */
-
-//     // 1. Generate public/private key pair for server certificate
-//     EVP_PKEY* server_key = EVP_PKEY_new();  // data structure for storing private key
-//     RSA* rsa = RSA_generate_key(
-//         2048,   /* number of bits for the key - 2048 is a sensible value */
-//         RSA_F4, /* exponent - RSA_F4 is defined as 0x10001L */
-//         NULL,   /* callback - can be NULL if we aren't displaying progress */
-//         NULL    /* callback argument - not needed in this case */
-//     );
-//     if(rsa == NULL) {
-//         printf("Failed to generate key for self-signed certificate. Exiting...\n");
-//         ERR_get_error();
-//         exit(EXIT_FAILURE);
-//     }
-//     EVP_PKEY_assign_RSA(server_key, rsa);     // Assign key to data structure
-//     printf("Successfully generated key for server certificate\n");
-
-//     // 2. Create a new Certificate Signing Request (CSR). Use server's private key
-//     //    in creation of CSR and sign using root certificate private key
-//     csr = X509_REQ_new();
-//     X509_REQ_set_version(csr, 1);  // Version 1
-//     X509_REQ_set_pubkey(csr, server_key);
-
-//     // Provide country code ("C"), organization ("O") and common name ("CN")
-//     printf("Adding fields to CSR\n");
-//     X509_NAME *name = X509_REQ_get_subject_name(csr);
-//     X509_NAME_add_entry_by_txt(name, "C", MBSTRING_ASC, (unsigned char *)"US", -1, -1, 0);
-//     X509_NAME_add_entry_by_txt(name, "O", MBSTRING_ASC, (unsigned char *)"Example", -1, -1, 0);
-//     X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, (unsigned char *) hostname, -1, -1, 0);
-
-//     // Add the server's private key to the CSR
-//     X509_REQ_sign(csr, root_key, EVP_sha256());
-
-//     // Create the server certificate
-//     server_cert = X509_new();
-//     X509_set_version(server_cert, 2);  // Version 3
-//     ASN1_INTEGER_set(X509_get_serialNumber(server_cert), 1);
-//     X509_gmtime_adj(X509_get_notBefore(server_cert), 0);
-//     X509_gmtime_adj(X509_get_notAfter(server_cert), 31536000L);  // 1 year validity
-//     X509_set_subject_name(server_cert, X509_REQ_get_subject_name(csr));
-//     X509_set_issuer_name(server_cert, X509_get_subject_name(root_cert));  // Root is the issuer
-//     X509_set_pubkey(server_cert, server_key);
-
-
-//     // X509_EXTENSION *san_extension  = X509_EXTENSION_new();
-//     // if (!X509_EXTENSION_set_object(san_extension, OBJ_nid2obj(NID_subject_alt_name))) {
-//     //     fprintf(stderr, "Error setting SAN extension object\n");
-//     //     return;
-//     // }
-//     // // SAN format: "DNS:hostname1,DNS:hostname2,IP:192.168.1.1"
-//     // if (!X509_EXTENSION_set_data(san_extension, (unsigned char*)hostname)) {
-//     //     fprintf(stderr, "Error setting SAN extension data\n");
-//     //     return;
-//     // }
-//     // if (!X509_add_ext(server_cert, san_extension, -1)) {
-//     //     fprintf(stderr, "Error adding SAN extension to server certificate\n");
-//     //     return;
-//     // }
-
-//     // Sign the server certificate with the root private key
-//     X509_sign(server_cert, root_key, EVP_sha256());
-
-//     // Save the server certificate amd private key to a file
-//     strcpy(server_cert_file, hostname);
-//     strcpy(server_key_file, hostname);
-//     strcat(server_cert_file, ".crt");
-//     strcat(server_key_file, ".key");
-    
-//     printf("File name of server certificate: %s\n", server_cert_file);
-//     printf("File name of server pirvate key: %s\n", server_key_file);
-
-
-//     fp = fopen(server_cert_file, "w");
-//     PEM_write_X509(fp, server_cert);
-//     fclose(fp);
-
-//     fp = fopen(server_key_file, "w");
-//     PEM_write_PrivateKey(fp, server_key, NULL, NULL, 0, NULL, NULL);
-//     fclose(fp);
-
-//     // Cleanup
-//     X509_free(root_cert);
-//     EVP_PKEY_free(root_key);
-//     EVP_PKEY_free(server_key);
-//     X509_REQ_free(csr);
-//     X509_free(server_cert);
-
-//     printf("Server certificate and private key generated and signed successfully.\n");
-// }
-
 void create_server_certificate(const char* root_cert_file, const char* root_key_file, 
                                char* hostname, char* server_cert_file, char* server_key_file, 
-                               const char* serial_number_file) {
+                               const char* serial_number_file) 
+{
 
     printf("Certificate Commands:\n");
     /*---1. CREATE SERVER SUBJECT -------------------------------------------*/
@@ -489,7 +348,8 @@ void create_server_certificate(const char* root_cert_file, const char* root_key_
     // printf("Server certificate and private key generated and signed successfully.\n");
 }
 
-int read_increment_save_serial_number(const char *file_path) {
+int read_increment_save_serial_number(const char *file_path)
+{
     FILE *file;
     int serial_number = 0;
 
@@ -522,110 +382,13 @@ int read_increment_save_serial_number(const char *file_path) {
     fprintf(file, "%d\n", serial_number);
     fclose(file);
 
-    printf("Updated serial number: %ld\n", serial_number);
+    printf("Updated serial number: %d\n", serial_number);
     return serial_number;
 }
 
 
-void initialize_proxy_test(int listening_port) {
-
-    const char *root_cert_file = "ca.crt";
-    const char *root_key_file = "ca.key";
-    const char *serial_number_file = "serial_number.txt";
-
-
-    char server_cert_file[HOST_NAME_LENGTH] = {0};
-    char server_key_file[HOST_NAME_LENGTH] = {0};
-
-    
-    // Declare variables
-    int listening_socket_fd;
-    struct sockaddr_in server_addr;
-    SSL_CTX *ctx;
-
-    // Ignore broken pipe signals 
-    signal(SIGPIPE, SIG_IGN);
-
-    // Create socket and begin listening using TCP
-    listening_socket_fd = create_socket(listening_port, &server_addr);
-
-    while(1) {
-        struct sockaddr_in client_addr;
-        unsigned int len = sizeof(client_addr);
-        SSL *ssl;
-        const char reply[] = "test\n";
-
-        // Establish basic TCP connection with client (perform TCP handshake)
-        int client_socket = accept(listening_socket_fd, (struct sockaddr*)&client_addr, &len);
-        if (client_socket < 0) {
-            perror("Unable to accept");
-            exit(EXIT_FAILURE);
-        }
-        printf("Client TCP handshake successful\n");
-
-        // Receive client data
-        char request[200];
-        char hostname[100];
-        int bytes_received = recv(client_socket, request, sizeof(request)-1, 0);
-        printf("Bytes received: %d\n", bytes_received);
-        printf("Message: %s", request);
-        extract_hostname(request, hostname);
-        printf("Hostname: %s\n", hostname);
-
-        // Client expects "Connection Established" response to CONNECT request.
-        // Must be sent for client to initiate SSL handshake
-        if (strstr(request, "CONNECT") == request) {
-            // Respond with "HTTP/1.1 200 Connection Established"
-            const char *response = "HTTP/1.1 200 Connection Established\r\n\r\n";
-            send(client_socket, response, strlen(response), 0);
-            printf("Sent response to client:\n%s\n", response);
-
-            // Create server certificate and save to disk
-            create_server_certificate(root_cert_file, root_key_file, hostname, server_cert_file, server_key_file, serial_number_file);
-            printf("\n--------------------\nCERTIFICATE CREATED\n--------------------\n\n");
-
-            // Prepare SSL Context object
-            ctx = create_context();                                    // Get SSL Context to store TLS configuration parameters
-            printf("Context created\n");
-            configure_context(ctx, server_cert_file, server_key_file); // Load certificate and private key into context
-            printf("Certificate loaded into context\n");
-
-            // Set client connection to SSL (perform SSL handshake)
-            ssl = SSL_new(ctx);                // Create SSL object
-            SSL_set_fd(ssl, client_socket);    // Link SSL object to accepted TCP socket
-            printf("SSL object created and linked to TCP socket\n");
-
-            if (SSL_accept(ssl) <= 0) {        // Perform SSL handshake
-                printf("Unsuccessful client SSL handshake\n");
-                ERR_print_errors_fp(stderr);
-            } else {
-                printf("SSL handshake completed.\n");
-            }
-
-            // Receive message from client
-            bytes_received = SSL_read(ssl, request, sizeof(request) - 1);
-            if (bytes_received > 0) {
-                request[bytes_received] = '\0'; // Null-terminate the received message
-                printf("Received message from client: %s\n", request);
-            } else {
-                printf("SSL_read failed");
-                exit(EXIT_FAILURE);
-            }
-
-            // Close SSL connection and free data structure
-            SSL_shutdown(ssl);
-            SSL_free(ssl);
-        } else {
-            fprintf(stderr, "Invalid request: Not a CONNECT request\n");
-        }
-    }
-    close(listening_socket_fd);
-}
-
-
-
-
-proxy_t* initialize_proxy(int listening_port) {
+proxy_t* initialize_proxy(int listening_port)
+{
     proxy_t* new_proxy = malloc(sizeof(proxy_t));
 
     //new_proxy->client_read = true;
@@ -637,7 +400,8 @@ proxy_t* initialize_proxy(int listening_port) {
 }
 
 
-void run_proxy(int listening_port, bool tunnel_mode) {
+void run_proxy(int listening_port, bool tunnel_mode)
+{
 
     const char *root_cert_file = "ca.crt";
     const char *root_key_file = "ca.key";
@@ -724,6 +488,7 @@ void run_proxy(int listening_port, bool tunnel_mode) {
                     cs->server_fd = proxy_connect_server(cs->h);
                     printf("HEADER COPY FOR SERVER %d :\n%s---",bytes_read, header_copy_for_server);
                     int l = write(cs->server_fd, header_copy_for_server, bytes_read);
+                    (void)l;
 
                     cs->data = malloc(bytes_read);
                     memcpy(cs->data, header_copy_for_server, bytes_read);
@@ -731,29 +496,6 @@ void run_proxy(int listening_port, bool tunnel_mode) {
                     cs->client_read = false;
 
                     proxy_add_cs(p, cs);
-
-                    // bzero(buf, 10000);
-                    // int b = read(cs->server_fd, buf, 10000);
-                    // printf("recieved messgae from server len = %d:\n", b);
-                    // printf("%s\n", buf);
-                    
-                    // int c = read(server_fd, buf+b, 10000-b);
-                    // printf("recieved messgae from server len = %d:\n", b);
-                    // printf("%s\n", buf);
-
-
-                    // char* server_resp_buf;
-                    // int server_resp_buf_size;
-                    // char* server_header;
-                    // int server_header_size;
-                    // proxy_read_server(NULL, server_fd,
-                    //               &server_resp_buf, &server_resp_buf_size,
-                    //               &server_header, &server_header_size, true);
-                    // proxy_read_server(server_fd, &server_resp_buf, &server_resp_buf_size, &server_header, &server_header_size);
-                    // printf("\nSERVER RESPONSE BUF \n%s", server_resp_buf);
-                    // write(cs->client_fd, server_resp_buf, server_resp_buf_size);
-                    // printf("relaying data back to client\n");
-                    //write(cs->client_fd, buf, b);
                     
 
                 }else{
@@ -853,16 +595,7 @@ void run_proxy(int listening_port, bool tunnel_mode) {
                             exit(EXIT_FAILURE);
                         }
 
-                        char* server_data;
-                        int server_data_size;
-                        char* server_header;
-                        int server_header_size;
-                        // proxy_read_server(ssl_server, 0, &server_data, 
-                        //                 &server_data_size, &server_header, 
-                        //                 &server_header_size, false);
 
-                        // printf("SERVER HEADER:\n");
-                        // printf("%.*s", server_header_size, server_header);
 
                         int bytes;
                         char server_response[50000] = {0};
@@ -1004,7 +737,6 @@ header_elems* proxy_parse_header(char* header)
     char* nl_delim = "\n";
     char* cr_delim = "\r";
     char* space_delim = " ";
-    char* col_delim = ":";
     
     char* last;
     char* line = strtok_r(header, nl_delim, &last);
@@ -1018,6 +750,7 @@ header_elems* proxy_parse_header(char* header)
         if(strcmp(command, "GET") == 0 || strcmp(command, "HEAD") == 0) {
             h->url = strtok_r(NULL, space_delim, &inner_last);
             char* http_v = strtok_r(NULL, cr_delim,&inner_last);
+            (void)http_v;
             //printf("HTTP_v = %s\n", http_v);
 
         }else if(strcmp(command, "Host:") == 0) {
@@ -1090,7 +823,8 @@ int proxy_connect_server(header_elems* header)
     return s_fd;
 }
 
-void proxy_clean(proxy_t* p){
+void proxy_clean(proxy_t* p)
+{
     close(p->listening_fd);
     client_server_t* cs = p->head;
     while(cs != NULL){
@@ -1102,75 +836,8 @@ void proxy_clean(proxy_t* p){
 }
 
 
-void proxy_read_server(int fd, char** buf, int* size, char** h_buf, int* h_size)
+SSL *create_ssl_connection(SSL_CTX *ctx, int sockfd)
 {
-    /* read in first set of data */
-    int buf_multiplier = 1;
-    char* header_buf = malloc(BUFSIZE*buf_multiplier + 1);
-    int bytes_read = read(fd, header_buf, BUFSIZE);
-    printf("bytes read = %d into buffer %p\n", bytes_read, header_buf);
-    //header_buf[bytes_read] = '\0';
-    // char* eoh = NULL;
-    // printf("%.*s\n",bytes_read,header_buf);
-    // while((eoh = strstr(header_buf, "\r\n\r\n")) == NULL) {
-    // printf("%.*s\n",bytes_read,header_buf);
-
-    //     buf_multiplier++;
-
-    //     header_buf = realloc(header_buf, BUFSIZE*buf_multiplier + 1);
-
-    //     int more_bytes = read(fd, header_buf + bytes_read, BUFSIZE);
-    //     if(more_bytes == 0){
-    //         printf("read n");
-    //         break;
-    //     }
-
-    //     bytes_read+=more_bytes;
-    //     printf("%d\n",bytes_read);
-    //     header_buf[bytes_read] = '\0';
-
-    // }
-    printf("here");
-
-    // int header_size = (int)(eoh - header_buf)+4;
-
-
-    *h_size = bytes_read;//header_size;
-    // printf("sadf");
-    *h_buf = header_buf;
-
-    // char* header_copy = malloc(header_size + 1);
-    // memcpy(header_copy, header_buf, header_size);
-    // header_copy[header_size] = '\0';
-    // printf("\n\n\n\nHeader COPY from server: %s\n", header_copy);
-
-    // /* parse header to get data length*/
-    // header_elems* h = proxy_parse_header(header_copy);
-    // print_header_elems(h);
-    // int data_size = atoi(h->data_len); //get data size from parsed header
-    // free(h);
-    // free(header_copy);
-    // int data_read = bytes_read - header_size;
-    // char* data_buf = malloc(data_size);
-
-    // memcpy(data_buf, eoh+4, data_read);
-    // int num_bytes_read = data_read;
-    // num_bytes_read += read(fd, data_buf + num_bytes_read, data_size-num_bytes_read);
-    // printf("SERVER DATA (data size: %d): %.*s",num_bytes_read,num_bytes_read,data_buf);
-    // while (num_bytes_read != data_size) {
-    //     num_bytes_read += read(fd, data_buf + num_bytes_read, data_size-num_bytes_read);
-    //     printf("SERVER DATA: %.*s",num_bytes_read,data_buf);
-
-    // }
-    // printf("hereasdf\n");
-    // *buf = data_buf;
-    // *size = num_bytes_read;
-
-}
-
-
-
-SSL *create_ssl_connection(SSL_CTX *ctx, int sockfd) {
     SSL *ssl = SSL_new(ctx);
     if (!ssl) {
         printf("FAILEING\n");
@@ -1187,7 +854,8 @@ SSL *create_ssl_connection(SSL_CTX *ctx, int sockfd) {
     return ssl;
 }
 
-int open_connection(const char *hostname, int port) {
+int open_connection(const char *hostname, int port)
+{
     struct hostent *host;
     struct sockaddr_in addr;
     int sockfd;
@@ -1309,7 +977,8 @@ void proxy_remove_cs(proxy_t* p, client_server_t* cs)
 
 }
 
-void print_cs(proxy_t* p){
+void print_cs(proxy_t* p)
+{
     client_server_t* cs = p->head;
     client_server_t* next = cs;
     while(next != NULL) {

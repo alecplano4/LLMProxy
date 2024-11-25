@@ -6,18 +6,10 @@
 #ifndef PROXY_H
 #define PROXY_H
 
-#include <stdio.h>
 #include <stdbool.h>
-#include <stdlib.h>
-#include <errno.h>
-#include <unistd.h>
-#include <assert.h>
-#include <netinet/in.h> // Provides sockaddr_in struct
-
+#include <netinet/in.h>
 #include <openssl/ssl.h>
-#include <openssl/err.h>
-#include <openssl/bio.h>
-#include <openssl/pem.h>
+
 
 
 // ----GLOBAL VARIABLES----------------------------------------------------------------------------
@@ -71,14 +63,12 @@ void proxy_clean(proxy_t* p);
 void run_proxy(int listening_port, bool tunnel_mode);
 
 header_elems* proxy_parse_header(char* header);
-//void proxy_read_server(SSL* ssl, int fd, char** buf, int* size, char** h_buf, int* h_size, bool tunnel_mode);
 int proxy_connect_server(header_elems* header);
 
 void proxy_read_server(int fd, char** buf, int* size, char** h_buf, int* h_size);
 
 
 int create_socket(int port, struct sockaddr_in* server_addr);
-void initialize_proxy_test(int listening_port);
 SSL_CTX *create_context(void);
 void configure_context(SSL_CTX *ctx, const char* certificate, const char* key);
 void proxy_server(void);

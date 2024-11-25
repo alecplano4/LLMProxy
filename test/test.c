@@ -22,59 +22,6 @@ int main(int argc, char* argv[]) {
     return 0;
 }
 
-header_elems* proxy_parse_head(char* header)
-{
-    header_elems* h = (header_elems*)calloc(1,sizeof(header_elems));
-
-    char* nl_delim = "\n";
-    char* cr_delim = "\r";
-    char* space_delim = " ";
-    char* col_delim = ":";
-    
-    char* last;
-    char* line = strtok_r(header, nl_delim, &last);
-    printf("%s", line);
-    while(strcmp(line, "\r") != 0){
-        //printf("%s\n", line);
-        char* inner_last;
-        char* command = strtok_r(line, space_delim, &inner_last);
-
-        if(strcmp(command, "GET") == 0 || strcmp(command, "HEAD") == 0) {
-            h->url = strtok_r(NULL, space_delim, &inner_last);
-            char* http_v = strtok_r(NULL, cr_delim,&inner_last);
-            //printf("HTTP_v = %s\n", http_v);
-
-        }else if(strcmp(command, "Host:") == 0) {
-
-            h->host = strtok_r(NULL, cr_delim, &inner_last);
-            if(strstr(h->host, ":") == NULL){
-                h->port = "443";
-            }else{
-                char* host_port_delim = (strstr(h->host, ":"));
-                *host_port_delim = '\0';
-                h->port = host_port_delim+1;
-            }
-            printf("HOST = %s\n", h->host);
-            printf("PORT = %s\n", h->port);
-
-        }else if(strcmp(command, "Content-Length:") == 0) {
-            char* len = strtok_r(NULL, cr_delim, &inner_last);
-            h->data_len = len;
-
-        }else if(strcmp(command, "Cache-Control:") == 0) {
-            char* eq = "=";
-            strtok_r(NULL, eq, &inner_last);
-            //Cache-Control: max-age=N
-            char* max_age = strtok(NULL, cr_delim);
-            h->max_age = max_age;
-
-        }
-        line = strtok_r(NULL, "\n", &last);
-    }
-
-    return h;
-}
-
 void test_strstr(char* str) {
     char* this = strstr(str, "\r\n\r\n");
     *this = '\0';
@@ -107,8 +54,8 @@ void test_parse_header(){
     //     "\r\n";
     char http_response[] = "GET http://www.cs.tufts.edu/comp/112/index.html HTTP/1.1\r\nHost: www.cs.tufts.edu\r\nUser-Agent: curl/8.7.1\r\nAccept: */*\r\nProxy-Connection: Keep-Alive\r\n\r\n";
     
-    // header_elems* e = proxy_parse_head(http_response);
-    // print_header_elems(e);
-    test_strstr(http_response);
+    header_elems* e = proxy_parse_header(http_response);
+    print_header_elems(e);
+    //test_strstr(http_response);
 }
 

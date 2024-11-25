@@ -41,4 +41,6 @@ $(TEST_OUT): $(TEST_SRC) $(SHARED_SRC) proxy/proxy.c client/client.c
 # Clean up the build files
 clean:
 	rm -f $(SERVER_OUT) $(CLIENT_OUT) $(TEST_OUT) test_client.out
+	rm certificates/*.pem
+	rm openssl_custom.cnf
 
