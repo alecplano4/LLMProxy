@@ -25,7 +25,7 @@ typedef struct header_elems {
 } header_elems;
 
 typedef struct client_server{
-    bool client_read;
+    //bool client_read;
 
     int client_fd;
     SSL* client_ssl;
@@ -88,6 +88,8 @@ void proxy_remove_cs(proxy_t* p, client_server_t* cs);
 
 void print_cs(proxy_t* p);
 int read_increment_save_serial_number(const char *file_path);
+
+void proxy_remove_invalid(proxy_t* p);
 
 #endif
 //-------------------------------------------------------------------------------------------------
