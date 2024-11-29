@@ -26,6 +26,8 @@ typedef struct header_elems {
 
 typedef struct client_server{
     //bool client_read;
+    struct timeval timeout;
+    struct timeval last_update;
 
     int client_fd;
     SSL* client_ssl;
@@ -90,6 +92,10 @@ void print_cs(proxy_t* p);
 int read_increment_save_serial_number(const char *file_path);
 
 void proxy_remove_invalid(proxy_t* p);
+
+void proxy_set_timeout(proxy_t* p, struct timeval* timeout);
+
+void invalidate_old(proxy_t* p);
 
 #endif
 //-------------------------------------------------------------------------------------------------

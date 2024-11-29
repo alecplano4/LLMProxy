@@ -8,6 +8,7 @@
 #include <arpa/inet.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/select.h>
 #include <unistd.h>
 #include <openssl/err.h>
 #include <netdb.h>
@@ -256,7 +257,7 @@ void run_proxy(int listening_port, bool tunnel_mode)
     fd_set read_fds;
     FD_ZERO(&read_fds);
 
-    // struct timeval timeout;
+    struct timeval timeout;
     // timeout.tv_sec = 1;  // Seconds
     // timeout.tv_usec = 0; // Microseconds (500ms)
 
@@ -268,14 +269,16 @@ void run_proxy(int listening_port, bool tunnel_mode)
         proxy_remove_invalid(p);
         FD_ZERO(&read_fds);
         proxy_create_fds(p, &read_fds);
+        proxy_set_timeout(p, &timeout);
         FD_SET(p->listening_fd, &read_fds);
         FD_SET(STDIN_FILENO, &read_fds);
         //usleep(100000);
         //print_cs(p);
         printf("-----------------------NEW SELECT--------------------------\n");
+        printf("TIMEOUT= %ld\n", timeout.tv_sec);
 
 
-        int select_ret = select(FD_SETSIZE, &read_fds, NULL, NULL, NULL);
+        int select_ret = select(FD_SETSIZE, &read_fds, NULL, NULL, &timeout);
 
         /* error with select */
         if (select_ret == -1) {
@@ -284,7 +287,8 @@ void run_proxy(int listening_port, bool tunnel_mode)
         }
         /* No data available on any file descriptors */
         else if (select_ret == 0) {
-            printf("DEBUG: No data available due to timeout\n");
+            printf("DEBUG: Invalidating old\n");
+            invalidate_old(p);
         }
         /* socket file descriptors ready for reading */
         else {
@@ -299,6 +303,8 @@ void run_proxy(int listening_port, bool tunnel_mode)
                 printf("Input Command: %.*s\n", bytes_read, buffer);
                 if(strncmp(buffer,"ls\n",3) == 0){
                     print_cs(p);
+                }if(strncmp(buffer,"exit\n",5) == 0){
+                    break;
                 }
 
             }
@@ -458,6 +464,9 @@ void run_proxy(int listening_port, bool tunnel_mode)
                         remove(server_cert_file);
                         remove(server_key_file);
 
+
+                        (cs->timeout).tv_sec = 60;
+                        gettimeofday(&(cs->last_update), NULL);
                         proxy_add_cs(p, cs);
                     } else {
                         #ifdef TCP_DEBUG
@@ -513,6 +522,8 @@ void run_proxy(int listening_port, bool tunnel_mode)
                             //exit(EXIT_FAILURE);
                             cs->invalid = true;
                         }
+                        (cs->timeout).tv_sec = 60;
+                        gettimeofday(&(cs->last_update), NULL);
 
                         //cs->client_read = false;
                     }
@@ -535,7 +546,8 @@ void run_proxy(int listening_port, bool tunnel_mode)
                             continue;
                         }
                         cs->bytes_read+=br;
-
+                        (cs->timeout).tv_sec = 60;
+                        gettimeofday(&(cs->last_update), NULL);
                         printf("Read %d bytes from server for %d out of %d:\n", br, cs->bytes_read, cs->data_len);
 
                     }
@@ -840,4 +852,40 @@ void print_cs(proxy_t* p)
         next = next->next;
     }
     printf("(null)\n");
+}
+
+void proxy_set_timeout(proxy_t* p, struct timeval* timeout)
+{
+    timeout->tv_sec = 60;
+    client_server_t* next = p->head;
+    while(next != NULL) {
+        struct timeval now;
+        gettimeofday(&now, NULL);
+        long diff = now.tv_sec-((next->last_update).tv_sec);
+        printf("DIFF %ld\n", diff);
+        int new_timout = 60 - diff;
+        if(new_timout<0){
+            next->timeout.tv_sec = 0;
+        }else{
+            next->timeout.tv_sec = new_timout;
+        }
+        if (next->timeout.tv_sec < timeout->tv_sec ) {
+            timeout->tv_sec = next->timeout.tv_sec;
+        }
+        next = next->next;
+    }
+}
+
+void invalidate_old(proxy_t* p)
+{
+    client_server_t* next = p->head;
+    while(next != NULL) {
+        struct timeval now;
+        gettimeofday(&now, NULL);
+        long diff = now.tv_sec-((next->last_update).tv_sec);
+        if (diff >= 60) {
+            next->invalid = true;
+        }
+        next = next->next;
+    }  
 }
