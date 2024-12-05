@@ -8,10 +8,12 @@
 #include <arpa/inet.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/select.h>
 #include <unistd.h>
 #include <openssl/err.h>
 #include <netdb.h>
+#include <curl/curl.h>
 
 
 
@@ -21,9 +23,14 @@
 #define BUFSIZE 81920
 
 X509 *create_signed_cert(SSL_CTX *root_ctx, const char *common_name);
+size_t write_callback(void *ptr, size_t size, size_t nmemb, char *data);
+void llmproxy_request(char *model, char *system, char *query, char *response_body);
 
 #define TCP_DEBUG
 #define SSL_DEBUG
+
+const char *url = "https://a061igc186.execute-api.us-east-1.amazonaws.com/dev";
+const char *x_api_key = "x-api-key: comp112XKNZIOqcTzsCltN0ufGJjsYT3KyZEUHrDesQO2eR"; // Your API key
 
 //----FUNCTIONS------------------------------------------------------------------------------------
 // Given port number and pointer to address struct, create TCP socket,
@@ -296,6 +303,7 @@ void run_proxy(int listening_port, bool tunnel_mode)
                 it runs all instructions for a server at once*/
             if(FD_ISSET(STDIN_FILENO, &read_fds)){
                 char buffer[1024];
+                bzero(buffer, 1024);
                 int bytes_read;
 
                 // Read input from stdin
@@ -303,8 +311,22 @@ void run_proxy(int listening_port, bool tunnel_mode)
                 printf("Input Command: %.*s\n", bytes_read, buffer);
                 if(strncmp(buffer,"ls\n",3) == 0){
                     print_cs(p);
-                }if(strncmp(buffer,"exit\n",5) == 0){
+                }else if(strncmp(buffer,"exit\n",5) == 0){
                     break;
+                }else if(strncmp(buffer,"llm",3) == 0){
+                    printf("hello");
+                    char response_body[4096] = "";
+                    char* search = buffer+4;
+                    int k = 0;
+                    while(*(search+k) != '\0'){
+                        if(*(search+k) == '\n'){
+                            *(search+k) = '\0';
+                            break;
+                        }
+                        k++;
+                    }
+                    llmproxy_request("4o-mini", "For a given topic, give me the the 5 most relevant wikipidia articles. I would like this formated as an annoted bibliography, with the link to the wikipedia article and a very short, max 3 sentences, summary of the article. ensure your response is formated in html.", search , response_body);
+                    printf("Response: %s\n", response_body);
                 }
 
             }
@@ -889,4 +911,83 @@ void invalidate_old(proxy_t* p)
         }
         next = next->next;
     }  
+}
+
+size_t write_callback(void *ptr, size_t size, size_t nmemb, char *data) {
+    size_t total_size = size * nmemb; // Total size of received data
+    strncat(data, ptr, total_size); // Append the received data to the buffer
+    return total_size;
+}
+
+void llmproxy_request(char *model, char *system, char *query, char *response_body){
+    CURL *curl;
+    CURLcode res;
+
+
+    char *request_fmt = "{\n"
+                        "  \"model\": \"%s\",\n"
+                        "  \"system\": \"%s\",\n"
+                        "  \"query\": \"%s\",\n"
+                        "  \"temperature\": %.2f,\n"
+                        "  \"lastk\": %d,\n"
+                        "  \"session_id\": \"%s\"\n"
+                        "}";
+
+    // JSON data to send in the POST request
+    char request[4096];
+    memset(request, 0, 4096);
+    snprintf(request,
+             sizeof(request),
+             request_fmt,
+             model,
+             system,
+             query,
+             0.7,
+             0,
+             "GenericSession");
+
+
+    printf("Initiating request: %s\n", request);
+
+    // Initialize CURL
+    curl = curl_easy_init();
+    if (curl) {
+        // Set the URL of the Proxy Agent server server
+        curl_easy_setopt(curl, CURLOPT_URL, url);
+
+        // Set the Content-Type to application/json
+        struct curl_slist *headers = NULL;
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+        
+        // Add x-api-key to header
+        headers = curl_slist_append(headers, x_api_key);
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+        // add request 
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, request);
+
+
+        // Set the write callback function to capture response data
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+
+        // Set the buffer to write the response into
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, response_body);
+
+        // Perform the POST request
+        res = curl_easy_perform(curl);
+
+        // Check if the request was successful
+        if(res != CURLE_OK) {
+            fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+        }
+
+        // Cleanup
+        curl_slist_free_all(headers);
+        curl_easy_cleanup(curl);
+    } else {
+        fprintf(stderr, "Failed to initialize CURL.\n");
+    }
 }

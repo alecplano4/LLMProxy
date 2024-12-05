@@ -26,15 +26,15 @@ server: $(SERVER_OUT)
 
 # Build the server executable
 $(SERVER_OUT): $(SERVER_SRC) $(SHARED_SRC)
-	$(CC) $(CFLAGS) -o $@ $^ -lssl -lcrypto
+	$(CC) $(CFLAGS) -o $@ $^ -lssl -lcrypto -lcurl
 
 # Build the client executable
 $(CLIENT_OUT): $(CLIENT_SRC) $(SHARED_SRC)
-	$(CC) $(CFLAGS) -o $@ $^ -lssl -lcrypto
+	$(CC) $(CFLAGS) -o $@ $^ -lssl -lcrypto -lcurl
 
 # Build the test executable
 $(TEST_OUT): $(TEST_SRC) $(SHARED_SRC) proxy/proxy.c client/client.c
-	$(CC) $(CFLAGS) -o $@ $^ -lssl -lcrypto
+	$(CC) $(CFLAGS) -o $@ $^ -lssl -lcrypto -lcurl
 
 
 

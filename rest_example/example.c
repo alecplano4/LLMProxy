@@ -95,7 +95,8 @@ int main() {
 
     // Buffer to store response data
     char response_body[4096] = "";
-    llmproxy_request("4o-mini", "I will give you a question, strictly give me a link to a wikipedia article. Do not answer the question yourself.", "what is the best way to loose fat in 10 days", response_body);
+    llmproxy_request("4o-mini", "For a given topic, give me the the 5 most relevant wikipidia articles. I would like this formated as an annoted bibliography, with the link to the wikipedia article and a very short, max 3 sentences, summary of the article.", "president washington\n", response_body);
+    printf("Hello");
     printf("Response: %s\n", response_body);
     return 0;
 }
