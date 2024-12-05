@@ -529,6 +529,7 @@ void run_proxy(int listening_port, bool tunnel_mode)
                         printf("SERVER is ready to read(%d:%d)\n", cs->client_fd, cs->server_fd);
                         char buf[BUFSIZE] = {0};
                         int br = SSL_read(cs->server_ssl, buf, BUFSIZE);
+                        printf("DATA: %.*s", br, buf);
                         if(br == 0){
                             printf("Clinet Closed Connection");
                             cs->invalid = true;

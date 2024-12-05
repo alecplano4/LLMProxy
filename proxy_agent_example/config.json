@@ -1,0 +1,6 @@
+{
+  "port": "9106",
+  "address": "127.0.0.1",  
+  "apiKey": "comp112XKNZIOqcTzsCltN0ufGJjsYT3KyZEUHrDesQO2eR",
+  "endPoint": "wss://a08va412jc.execute-api.us-east-1.amazonaws.com/dev/"
+}
