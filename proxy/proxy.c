@@ -276,8 +276,8 @@ void run_proxy(int listening_port, bool tunnel_mode)
         FD_SET(STDIN_FILENO, &read_fds);
         //usleep(100000);
         //print_cs(p);
-        printf("-----------------------NEW SELECT--------------------------\n");
-        printf("TIMEOUT= %ld\n", timeout.tv_sec);
+        // printf("-----------------------NEW SELECT--------------------------\n");
+        // printf("TIMEOUT= %ld\n", timeout.tv_sec);
 
 
         int select_ret = select(FD_SETSIZE, &read_fds, NULL, NULL, &timeout);
@@ -304,7 +304,7 @@ void run_proxy(int listening_port, bool tunnel_mode)
                 bytes_read = read(STDIN_FILENO, buffer, sizeof(buffer) - 1);
                 printf("Input Command: %.*s\n", bytes_read, buffer);
                 if(strncmp(buffer,"ls\n",3) == 0){
-                    print_cs(p);
+                    // print_cs(p);
                 }if(strncmp(buffer,"exit\n",5) == 0){
                     break;
                 }
@@ -798,10 +798,7 @@ void proxy_remove_invalid(proxy_t* p)
                 prev = prev->next;
                 curr = curr->next;
             }
-            print_cs(p);
-
-
-
+            // print_cs(p);
         }
         if(remove_first){
             client_server_t* new_head = p->head->next;
@@ -832,8 +829,7 @@ void proxy_remove_invalid(proxy_t* p)
             free(p->head);
             p->num_cs--;
             p->head = new_head;
-            print_cs(p);
-
+            // print_cs(p);
         }
 
     }
@@ -859,7 +855,7 @@ void proxy_set_timeout(proxy_t* p, struct timeval* timeout)
         struct timeval now;
         gettimeofday(&now, NULL);
         long diff = now.tv_sec-((next->last_update).tv_sec);
-        printf("DIFF %ld\n", diff);
+        // printf("DIFF %ld\n", diff);
         int new_timout = 60 - diff;
         if(new_timout<0){
             next->timeout.tv_sec = 0;
