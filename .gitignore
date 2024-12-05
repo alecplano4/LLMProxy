@@ -3,3 +3,6 @@
 .vscode*
 *.key
 *.crt
+*.pem
+*.cnf
+*.srl
