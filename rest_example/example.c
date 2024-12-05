@@ -8,7 +8,7 @@
 const char *url = "https://a061igc186.execute-api.us-east-1.amazonaws.com/dev";
 
 // add your API key
-const char *x_api_key = "x-api-key: your-api-key-goes-here"; // Your API key
+const char *x_api_key = "comp112XKNZIOqcTzsCltN0ufGJjsYT3KyZEUHrDesQO2eR"; // Your API key
 
 
 // This function is called by libcurl to write data into a string buffer
@@ -41,8 +41,8 @@ void llmproxy_request(char *model, char *system, char *query, char *response_bod
              model,
              system,
              query,
-             0.0,
-             1,
+             0.7,
+             0,
              "GenericSession");
 
 
@@ -95,7 +95,7 @@ int main() {
 
     // Buffer to store response data
     char response_body[4096] = "";
-    llmproxy_request("4o-mini", "Answer my question in a funny manner", "Who are the Jumbos", response_body);
+    llmproxy_request("4o-mini", "Answer my question in a funny manner", "who is the president of the world", response_body);
     printf("Response: %s\n", response_body);
     return 0;
 }
