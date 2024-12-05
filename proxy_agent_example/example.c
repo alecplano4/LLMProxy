@@ -4,11 +4,11 @@
 #include <curl/curl.h>
 
 
-// dont change
-const char *url = "https://a061igc186.execute-api.us-east-1.amazonaws.com/dev";
+char url[128];
 
-// add your API key
-const char *x_api_key = "x-api-key: comp112XKNZIOqcTzsCltN0ufGJjsYT3KyZEUHrDesQO2eR"; // Your API key
+
+
+
 
 
 // This function is called by libcurl to write data into a string buffer
@@ -32,6 +32,7 @@ void llmproxy_request(char *model, char *system, char *query, char *response_bod
                         "  \"session_id\": \"%s\"\n"
                         "}";
 
+
     // JSON data to send in the POST request
     char request[4096];
     memset(request, 0, 4096);
@@ -41,10 +42,9 @@ void llmproxy_request(char *model, char *system, char *query, char *response_bod
              model,
              system,
              query,
-             0.7,
-             0,
+             0.0,
+             1,
              "GenericSession");
-
 
     printf("Initiating request: %s\n", request);
 
@@ -58,11 +58,7 @@ void llmproxy_request(char *model, char *system, char *query, char *response_bod
         struct curl_slist *headers = NULL;
         headers = curl_slist_append(headers, "Content-Type: application/json");
         
-        // Add x-api-key to header
-        headers = curl_slist_append(headers, x_api_key);
-        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-
-
+        // add headers
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
         // add request 
@@ -91,11 +87,19 @@ void llmproxy_request(char *model, char *system, char *query, char *response_bod
     }
 }
 
-int main() {
 
+int main(int argc, char *argv[]) {
+    if (argc < 3) {
+        printf("<agent-address> <agent-portnumber>.\nExample Usage: %s 127.0.0.1 5000\n", argv[0]);
+        return 1;
+    }
+
+    // construct url to access agent
+    snprintf(url, sizeof(url), "http://%s:%s/post", argv[1], argv[2]);
+  
     // Buffer to store response data
     char response_body[4096] = "";
-    llmproxy_request("4o-mini", "I will give you a question, strictly give me a link to a wikipedia article. Do not answer the question yourself.", "what is the best way to loose fat in 10 days", response_body);
+    llmproxy_request("4o-mini", "Answer my question in a funny manner", "Who are the Jumbos", response_body);
     printf("Response: %s\n", response_body);
     return 0;
 }
