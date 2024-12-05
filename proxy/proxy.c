@@ -134,8 +134,7 @@ void extract_hostname(const char *request, char *hostname)
 
 
 void create_server_certificate(const char* root_cert_file, const char* root_key_file, 
-                               char* hostname, char* server_cert_file, char* server_key_file, 
-                               const char* serial_number_file) 
+                               char* hostname, char* server_cert_file, char* server_key_file) 
 {
 
     printf("Certificate Commands:\n");
@@ -192,6 +191,8 @@ void create_server_certificate(const char* root_cert_file, const char* root_key_
 
 }
 
+// Each certificate requires a unique serial number. Use file to store
+// counter, incrementing for each serial number.
 int read_increment_save_serial_number(const char *file_path)
 {
     FILE *file;
@@ -230,12 +231,13 @@ int read_increment_save_serial_number(const char *file_path)
     return serial_number;
 }
 
-
+// Given listening port, begin listening and
+// return proxy data structure
 proxy_t* initialize_proxy(int listening_port)
 {
     proxy_t* new_proxy = malloc(sizeof(proxy_t));
 
-    //new_proxy->client_read = true;
+    // Create socket and begin listening
     new_proxy->listening_fd = create_socket(listening_port, &(new_proxy->proxy_addr));
     new_proxy->head = NULL;
     new_proxy->num_cs = 0;
@@ -246,12 +248,12 @@ proxy_t* initialize_proxy(int listening_port)
 
 void run_proxy(int listening_port, bool tunnel_mode)
 {
-
+    // Specify file path of root certificate and key for signing
     const char *root_cert_file = "ca.crt";
     const char *root_key_file = "ca.key";
-    const char *serial_number_file = "serial_number.txt";
 
-
+    // Begin listening for connections and store proxy information in
+    // proxy_t data structure
     proxy_t* p = initialize_proxy(listening_port);
 
     fd_set read_fds;
@@ -294,11 +296,11 @@ void run_proxy(int listening_port, bool tunnel_mode)
         else {
             /* Current implementation does not work concurently 
                 it runs all instructions for a server at once*/
+            
+            // Read input from stdin
             if(FD_ISSET(STDIN_FILENO, &read_fds)){
                 char buffer[1024];
                 int bytes_read;
-
-                // Read input from stdin
                 bytes_read = read(STDIN_FILENO, buffer, sizeof(buffer) - 1);
                 printf("Input Command: %.*s\n", bytes_read, buffer);
                 if(strncmp(buffer,"ls\n",3) == 0){
@@ -308,6 +310,8 @@ void run_proxy(int listening_port, bool tunnel_mode)
                 }
 
             }
+
+            // New client connection
             if (FD_ISSET(p->listening_fd, &read_fds)) {
                 if(tunnel_mode){
                     client_server_t* cs = malloc(sizeof(client_server_t));
@@ -316,9 +320,6 @@ void run_proxy(int listening_port, bool tunnel_mode)
                     /* Potential client local variables */
                     
                     cs->client_addr_len = sizeof(cs->client_addr);
-
-
-
                     cs->client_fd = accept(p->listening_fd,
                                         (struct sockaddr*)&(cs->client_addr),
                                         &(cs->client_addr_len));
@@ -331,7 +332,6 @@ void run_proxy(int listening_port, bool tunnel_mode)
                     cs->h = proxy_parse_header((char*)buf);
 
                     print_header_elems(cs->h);
-
 
                     printf("Connecting to server\n\n");
                     cs->server_fd = proxy_connect_server(cs->h);
@@ -346,7 +346,6 @@ void run_proxy(int listening_port, bool tunnel_mode)
 
                     proxy_add_cs(p, cs);
                     
-
                 }else{
                     #ifdef TCP_DEBUG
                     printf("New Connection Inbound\n");
@@ -402,7 +401,7 @@ void run_proxy(int listening_port, bool tunnel_mode)
                         #endif
 
                         // Create server certificate and save to disk
-                        create_server_certificate(root_cert_file, root_key_file, hostname, server_cert_file, server_key_file, serial_number_file);
+                        create_server_certificate(root_cert_file, root_key_file, hostname, server_cert_file, server_key_file);
                         #ifdef SSL_DEBUG
                         printf("\n--------------------\nCERTIFICATE CREATED\n--------------------\n\n");
                         #endif
@@ -419,7 +418,7 @@ void run_proxy(int listening_port, bool tunnel_mode)
                         #endif
 
                         // Set client connection to SSL (perform SSL handshake)
-                        cs->client_ssl = SSL_new(cs->client_ctx);      // Create SSL object
+                        cs->client_ssl = SSL_new(cs->client_ctx);     // Create SSL object
                         SSL_set_fd(cs->client_ssl, cs->client_fd);    // Link SSL object to accepted TCP socket
                         
                         #ifdef SSL_DEBUG
@@ -444,7 +443,6 @@ void run_proxy(int listening_port, bool tunnel_mode)
                         print_header_elems(header);
                         printf("---------------\n");
                        
-
 
                         /* receive a message from the client*/
                         printf("FORWARDING MESSAGE TO SERVER: %s", request);
@@ -476,10 +474,8 @@ void run_proxy(int listening_port, bool tunnel_mode)
                         proxy_add_cs(p, cs);
                     }
                 }
-
-                
-
             }
+
             //for all fds in the list add call relay
             client_server_t* cs = p->head;
             for(int i = 0; i<p->num_cs; i++){
@@ -538,6 +534,9 @@ void run_proxy(int listening_port, bool tunnel_mode)
                             cs->invalid = true;
                             continue;
                         }
+
+                        // TODO: INSERT LLM FUNCTIONALITY HERE
+
                         else if (SSL_write(cs->client_ssl, buf, br) <= 0) {
                             printf("ERROR with ssl_write\n");
                             //exit(EXIT_FAILURE);
@@ -551,12 +550,9 @@ void run_proxy(int listening_port, bool tunnel_mode)
                         printf("Read %d bytes from server for %d out of %d:\n", br, cs->bytes_read, cs->data_len);
 
                     }
-                    
                 }
                                         
-                // }
                 cs = next;
-            
             }
         }
     }
