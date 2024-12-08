@@ -26,7 +26,6 @@ int main(int argc, char* argv[]) {
     listening_port = atoi(argv[1]);
     if(argc == 3){
         if(strcmp(argv[2],"-tunnel") == 0){
-            printf("Using Tunnel Mode\n");
             tunnel_mode = true;
         }
     }
