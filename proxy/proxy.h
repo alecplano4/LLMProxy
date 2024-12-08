@@ -97,5 +97,7 @@ void proxy_set_timeout(proxy_t* p, struct timeval* timeout);
 
 void invalidate_old(proxy_t* p);
 
+bool wikipedia_search(char* client_request);
+
 #endif
 //-------------------------------------------------------------------------------------------------

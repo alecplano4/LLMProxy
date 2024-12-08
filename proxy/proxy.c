@@ -80,6 +80,32 @@ int create_socket(int port, struct sockaddr_in* server_addr)
     return listening_socket_fd;
 }
 
+// Fix LLM response for HTML formatting (prior to sending to client)
+void remove_non_html(char* input, char* output){
+    // Remove incorrect backslashes
+    char fixed_input[4096];
+    int i = 4;
+    int j = 0;
+    while(*(input+i) != '\0'){
+        if(*(input+i) == '\\'){
+            if(*(input+i+1) == 'n'){
+                i++;
+            }
+        }else{
+            *(fixed_input+j) = *(input+i);
+            j++;
+        }
+        i++;
+    }
+    *(fixed_input+j) = '\0';
+
+    // Add HTTP header to output buffer
+    int content_length = strlen(fixed_input);
+    sprintf(output, "HTTP/1.1 200 OK\r\nContent-Type: text/html;\r\ncharset=UTF-8\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", content_length, fixed_input);
+}
+
+
+
 // Return SSL Context data structure, used to store
 // configuration settings and parameters for SSL connections
 SSL_CTX *create_context()
@@ -139,12 +165,66 @@ void extract_hostname(const char *request, char *hostname)
     }
 }
 
+// Given client GET request for Wikipedia search, 
+// extract the contents of the search from the request
+void extract_wikipedia_search(char* server_response, char* search) {
+    // Format: "/search-redirect.php?family=Wikipedia&language=en&search=<search word 1>+<search word 2>&language=en&go=Go"
+    char *start, *end;
+
+    // Find the first occurrence of '='
+    start = strchr(server_response, '=');
+    if (start != NULL) {
+        // Find the second '='
+        start = strchr(start + 1, '=');
+        if (start != NULL) {
+            start = strchr(start + 1, '=');
+            // Find the third '='
+            if (start != NULL) {
+                start++;
+                // Find the ampersand '&' (indicating the end of the search)
+                end = strchr(start, '&');
+                if (end != NULL) {
+                    // Copy the substring between the 3rd '=' and the '&'
+                    strncpy(search, start, end - start);
+                    search[end - start] = '\0'; // Null-terminate the string
+                    // Iterate over string to replace '+' character with space ' ' character
+                    for(int i = 0; i < end - start; i++) {
+                        if(*(search + i) == '+') {
+                            search[i] = ' ';
+                        }
+                    }
+                    printf("Extracted content: %s\n", search);
+                } else {
+                    printf("Third '=' not found.\n");
+                }
+            }
+        } else {
+            printf("Second '=' not found.\n");
+        }
+    } else {
+        printf("First '=' not found.\n");
+    }
+    
+}
+
+
+/* Given client HTTP request, return True if request is GET request
+   for Wikipedia search */
+bool wikipedia_search(char* client_request) {
+    // Wikipedia GET request substring extracted manually from observed
+    // search request
+    char wiki_search_substr[] = "=Wikipedia&language=en&search=";
+    if(strstr(client_request, wiki_search_substr) != NULL) {
+        return true;
+    }
+    return false;
+}
 
 void create_server_certificate(const char* root_cert_file, const char* root_key_file, 
                                char* hostname, char* server_cert_file, char* server_key_file) 
 {
 
-    printf("Certificate Commands:\n");
+    // printf("Certificate Commands:\n");
     /*---1. CREATE SERVER SUBJECT -------------------------------------------*/
     // Curl relies on the Common Name (CN) in the subject field for domain validation.
     // Browsers rely on the SAN field for domain validation
@@ -160,7 +240,7 @@ void create_server_certificate(const char* root_cert_file, const char* root_key_
     char cmd_create_private_key[500];
     snprintf(cmd_create_private_key, sizeof(cmd_create_private_key), 
              "openssl genpkey -algorithm rsa -pkeyopt rsa_keygen_bits:2048 -out certificates/%s_key.pem > /dev/null 2>&1", hostname);
-    printf("Private_Key Command: %s\n", cmd_create_private_key);
+    // printf("Private_Key Command: %s\n", cmd_create_private_key);
     system(cmd_create_private_key);
     snprintf(server_key_file, HOST_NAME_LENGTH, "certificates/%s_key.pem", hostname);
 
@@ -184,7 +264,7 @@ void create_server_certificate(const char* root_cert_file, const char* root_key_
     char cmd_create_CSR[500];
     snprintf(cmd_create_CSR, sizeof(cmd_create_CSR), 
              "openssl req -new -key certificates/%s_key.pem -out certificates/%s_csr.pem -subj %s -config openssl_custom.cnf", hostname, hostname, subject);
-    printf("Create CSR: %s\n", cmd_create_CSR);
+    // printf("Create CSR: %s\n", cmd_create_CSR);
     system(cmd_create_CSR);
 
     /*---4. SIGN CSR WITH CERTIFICATE AUTHORITY ----------------------------*/
@@ -192,7 +272,7 @@ void create_server_certificate(const char* root_cert_file, const char* root_key_
     snprintf(command_sign_CSR, sizeof(command_sign_CSR), 
              "openssl x509 -req -days 365 -in certificates/%s_csr.pem -CA %s -CAkey %s -CAcreateserial -out certificates/%s_cert.pem -extfile openssl_custom.cnf -extensions v3_req", 
              hostname, root_cert_file, root_key_file, hostname);
-    printf("CA Sign CSR Command: %s\n", command_sign_CSR);
+    // printf("CA Sign CSR Command: %s\n", command_sign_CSR);
     system(command_sign_CSR);
     snprintf(server_cert_file, HOST_NAME_LENGTH, "certificates/%s_cert.pem", hostname);
 
@@ -327,10 +407,9 @@ void run_proxy(int listening_port, bool tunnel_mode)
                         }
                         k++;
                     }
-                    llmproxy_request("4o-mini", "For a given topic, give me the the 5 most relevant wikipidia articles. I would like this formated as an annoted bibliography, with the link to the wikipedia article and a very short, max 3 sentences, summary of the article. ensure your response is formated in html.", search , response_body);
+                    llmproxy_request("4o-mini", "For a given topic, give me the the 3 most relevant wikipidia articles, please be certain the wikipedia articles match real articles. I would like this formated as an annoted bibliography, with the link to the wikipedia article and a very short, max 3 sentences, summary of the article. Ensure your response is formated in html.", search , response_body);
                     printf("Response: %s\n", response_body);
                 }
-
             }
 
             // New client connection
@@ -530,15 +609,51 @@ void run_proxy(int listening_port, bool tunnel_mode)
                         char server_response[BUFSIZE] = {0};
                         bytes = SSL_read(cs->client_ssl, server_response, BUFSIZE);
                         printf("Client to server(%d)\n%s\n",bytes, server_response);
+                        // If Wikipedia search, intercept request (and do not send to server)
                         if(bytes == 0){
-                            printf("Clinet Closed Connection");
+                            printf("Client Closed Connection");
                             cs->invalid = true;
                             continue;;
-                        }
-                        else if (SSL_write(cs->server_ssl, server_response, bytes) <= 0) {
-                            printf("ERROR with ssl_write\n");
-                            //exit(EXIT_FAILURE);
-                            cs->invalid = true;
+                        } else {
+                            if(wikipedia_search(server_response)) {
+                                // Do something
+                                char search[4096];
+                                extract_wikipedia_search(server_response, search);
+                                printf("\n\n--------\nWIKIPEDIA SEARCH!!\n");
+                                // char* search = "Prominent People";
+                                char response_body[4096];
+                                llmproxy_request("4o-mini", 
+                                                 "For a given topic, give me the 3 most relevant wikipidia articles, please be certain the wikipedia articles match real articles. I would like this formated as an annoted bibliography, with the link to the wikipedia article and a very short, max 3 sentences, summary of the article. Ensure your response is formated in html.", 
+                                                 search, response_body);
+                                printf("After LLM response\n");
+                                // Fix response in preparation for HTML helper function
+                                char* beg = strstr(response_body,"```")+3;
+                                char* end = strstr(beg, "```");
+                                *end = '\0';
+                                char* refine_responce = malloc(4096);
+                                remove_non_html(beg, refine_responce);
+                                printf("Refined response: \n%s", refine_responce);
+                                if (SSL_write(cs->client_ssl, refine_responce, strlen(refine_responce)) <= 0) {
+                                    printf("ERROR with ssl_write\n");
+                                    //exit(EXIT_FAILURE);
+                                    cs->invalid = true;
+                                    //SSL_shutdown(cs->client_ssl);
+                                    free(refine_responce);
+                                    continue;
+                                }
+                                printf("Finished LLM write to client!\n----------\n\n");
+                                free(refine_responce);
+
+                                SSL_free(cs->server_ssl);
+                                cs->server_ssl = NULL;                    
+                                close(cs->server_fd);
+                                cs->server_fd = 0;
+
+                            } else if (SSL_write(cs->server_ssl, server_response, bytes) <= 0) {
+                                printf("ERROR with ssl_write\n");
+                                //exit(EXIT_FAILURE);
+                                cs->invalid = true;
+                            }
                         }
                         (cs->timeout).tv_sec = 60;
                         gettimeofday(&(cs->last_update), NULL);
